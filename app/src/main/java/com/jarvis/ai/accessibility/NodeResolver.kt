@@ -19,6 +19,10 @@ import android.view.accessibility.AccessibilityNodeInfo
  * It returns ALL reasonable candidates with scores, selects the safest, and
  * refuses ambiguous high-confidence ties (returns [Resolution.Ambiguous]) so the
  * caller can ask the user instead of blindly clicking the first match.
+ *
+ * All node-property access is wrapped in runCatching: a node can go STALE
+ * mid-traversal (screen changed under us), and touching a stale node throws
+ * IllegalStateException. That must never escape this object.
  */
 object NodeResolver {
 
@@ -59,8 +63,8 @@ object NodeResolver {
         return direct
             .sortedWith(
                 compareByDescending<Candidate> { c -> c.score }
-                    .thenByDescending { c -> if (c.node.isVisibleToUser) 1 else 0 }
-                    .thenByDescending { c -> if (c.node.isEnabled) 1 else 0 }
+                    .thenByDescending { c -> runCatching { c.node.isVisibleToUser }.getOrDefault(false).let { if (it) 1 else 0 } }
+                    .thenByDescending { c -> runCatching { c.node.isEnabled }.getOrDefault(false).let { if (it) 1 else 0 } }
                     .thenBy { c -> visibleArea(c.node) }
             )
     }
@@ -94,10 +98,13 @@ object NodeResolver {
         val stack = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
         while (stack.isNotEmpty()) {
             val node = stack.removeFirst()
-            node.viewIdResourceName?.lowercase()?.let { nid ->
+            runCatching { node.viewIdResourceName }.getOrNull()?.lowercase()?.let { nid ->
                 if (nid == id || nid.endsWith(":$id") || nid.endsWith("/$id")) best = node
             }
-            repeat(node.childCount) { stack.addLast(node.getChild(it)) }
+            val childCount = runCatching { node.childCount }.getOrDefault(0)
+            repeat(childCount) {
+                runCatching { node.getChild(it) }.getOrNull()?.let { stack.addLast(it) }
+            }
         }
         return best
     }
@@ -109,8 +116,13 @@ object NodeResolver {
         val editable = mutableListOf<AccessibilityNodeInfo>()
         while (stack.isNotEmpty()) {
             val node = stack.removeFirst()
-            if (node.isEditable && node.isEnabled) editable.add(node)
-            repeat(node.childCount) { stack.addLast(node.getChild(it)) }
+            val isEditable = runCatching { node.isEditable }.getOrDefault(false)
+            val isEnabled = runCatching { node.isEnabled }.getOrDefault(false)
+            if (isEditable && isEnabled) editable.add(node)
+            val childCount = runCatching { node.childCount }.getOrDefault(0)
+            repeat(childCount) {
+                runCatching { node.getChild(it) }.getOrNull()?.let { stack.addLast(it) }
+            }
         }
         if (editable.isEmpty()) return null
         if (hint != null) {
@@ -126,8 +138,10 @@ object NodeResolver {
     fun findClickableAncestor(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         var current: AccessibilityNodeInfo? = node
         while (current != null) {
-            if (current.isClickable || current.isLongClickable) return current
-            current = runCatching { current.parent }.getOrNull()
+            val clickable = runCatching { current!!.isClickable }.getOrDefault(false)
+            val longClickable = runCatching { current!!.isLongClickable }.getOrDefault(false)
+            if (clickable || longClickable) return current
+            current = runCatching { current!!.parent }.getOrNull()
         }
         return null
     }
@@ -138,7 +152,7 @@ object NodeResolver {
     }
 
     private fun nodeHint(node: AccessibilityNodeInfo): String? =
-        node.text?.toString() ?: node.contentDescription?.toString()
+        runCatching { node.text?.toString() ?: node.contentDescription?.toString() }.getOrNull()
 
     private fun traverseDirect(
         node: AccessibilityNodeInfo,
@@ -146,19 +160,21 @@ object NodeResolver {
         partial: Boolean,
         out: MutableList<Candidate>
     ) {
+        val childCount = runCatching { node.childCount }.getOrDefault(0)
         val score = eval(node, needle, partial)
         if (score.first > 0) out.add(Candidate(node, score.first, score.second))
-        repeat(node.childCount) {
+        repeat(childCount) {
             runCatching { node.getChild(it) }.getOrNull()?.let { traverseDirect(it, needle, partial, out) }
         }
     }
 
-    /** Returns (score, reason); 0 means no match. */
+    /** Returns (score, reason); 0 means no match. All property access is guarded
+     *  against IllegalStateException from a node going stale mid-traversal. */
     private fun eval(
         node: AccessibilityNodeInfo,
         needle: String,
         partial: Boolean
-    ): Pair<Int, String> {
+    ): Pair<Int, String> = runCatching {
         val text = node.text?.toString()?.let { TextMatcher.normalize(it) }
         val desc = node.contentDescription?.toString()?.let { TextMatcher.normalize(it) }
         val id = node.viewIdResourceName?.lowercase()
@@ -166,36 +182,36 @@ object NodeResolver {
         if (id != null) {
             val seg = id.substringAfter("/")
             if (id == needle || seg == needle || id.endsWith(":$needle")) {
-                return 95 to "id"
+                return@runCatching 95 to "id"
             }
         }
-        if (text == needle) return 100 to "exact-text"
-        if (desc == needle) return 92 to "exact-desc"
+        if (text == needle) return@runCatching 100 to "exact-text"
+        if (desc == needle) return@runCatching 92 to "exact-desc"
         if (partial) {
-            if (text != null && text.contains(needle)) return 70 to "text-contains"
-            if (desc != null && desc.contains(needle)) return 60 to "desc-contains"
+            if (text != null && text.contains(needle)) return@runCatching 70 to "text-contains"
+            if (desc != null && desc.contains(needle)) return@runCatching 60 to "desc-contains"
         }
         text?.let {
             val f = TextMatcher.fuzzyScore(needle, it)
-            if (f >= 0.85) return 55 to "fuzzy-text"
-            if (f >= 0.6) return 45 to "fuzzy-text-weak"
+            if (f >= 0.85) return@runCatching 55 to "fuzzy-text"
+            if (f >= 0.6) return@runCatching 45 to "fuzzy-text-weak"
         }
         desc?.let {
             val f = TextMatcher.fuzzyScore(needle, it)
-            if (f >= 0.85) return 55 to "fuzzy-desc"
-            if (f >= 0.6) return 45 to "fuzzy-desc-weak"
+            if (f >= 0.85) return@runCatching 55 to "fuzzy-desc"
+            if (f >= 0.6) return@runCatching 45 to "fuzzy-desc-weak"
         }
         // Structural fallback: interactive node with any text but no direct match.
-        if ((text != null || desc != null) && isInteractiveClass(node)) return 20 to "structural"
-        return 0 to ""
-    }
+        if ((text != null || desc != null) && isInteractiveClass(node)) return@runCatching 20 to "structural"
+        0 to ""
+    }.getOrDefault(0 to "")
 
-    private fun isInteractiveClass(node: AccessibilityNodeInfo): Boolean {
-        val c = node.className?.toString()?.lowercase() ?: return false
-        return c.contains("button") || c.contains("textview") || c.contains("edittext") ||
+    private fun isInteractiveClass(node: AccessibilityNodeInfo): Boolean = runCatching {
+        val c = node.className?.toString()?.lowercase() ?: return@runCatching false
+        c.contains("button") || c.contains("textview") || c.contains("edittext") ||
             c.contains("imagebutton") || c.contains("checkbox") || c.contains("switch") ||
             c.contains("viewgroup")
-    }
+    }.getOrDefault(false)
 
     private fun collectDescendantMatches(
         node: AccessibilityNodeInfo,
@@ -203,27 +219,34 @@ object NodeResolver {
         out: MutableList<AccessibilityNodeInfo>
     ) {
         // Only enqueue containers that themselves don't strongly match.
-        val hasChildMatch = (0 until node.childCount).any { i ->
+        val childCount = runCatching { node.childCount }.getOrDefault(0)
+        val hasChildMatch = (0 until childCount).any { i ->
             val child = runCatching { node.getChild(i) }.getOrNull() ?: return@any false
             matchesRecursively(child, needle)
         }
         if (hasChildMatch) out.add(node)
-        repeat(node.childCount) {
+        repeat(childCount) {
             runCatching { node.getChild(it) }.getOrNull()?.let { collectDescendantMatches(it, needle, out) }
         }
     }
 
-    private fun matchesRecursively(node: AccessibilityNodeInfo, needle: String): Boolean {
+    private fun matchesRecursively(node: AccessibilityNodeInfo, needle: String): Boolean = runCatching {
         val text = node.text?.toString()?.let { TextMatcher.normalize(it) }
         val desc = node.contentDescription?.toString()?.let { TextMatcher.normalize(it) }
-        if (text == needle || desc == needle) return true
-        if (text != null && text.contains(needle)) return true
-        if (desc != null && desc.contains(needle)) return true
-        repeat(node.childCount) {
-            runCatching { node.getChild(it) }.getOrNull()?.let { if (matchesRecursively(it, needle)) return true }
+        if (text == needle || desc == needle) return@runCatching true
+        if (text != null && text.contains(needle)) return@runCatching true
+        if (desc != null && desc.contains(needle)) return@runCatching true
+        val childCount = node.childCount
+        var found = false
+        repeat(childCount) {
+            if (!found) {
+                runCatching { node.getChild(it) }.getOrNull()?.let {
+                    if (matchesRecursively(it, needle)) found = true
+                }
+            }
         }
-        return false
-    }
+        found
+    }.getOrDefault(false)
 
     fun visibleArea(node: AccessibilityNodeInfo): Int {
         val r = visibleBounds(node)
