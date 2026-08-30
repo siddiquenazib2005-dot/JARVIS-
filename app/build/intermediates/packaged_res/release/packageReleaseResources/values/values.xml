@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="jarvis_background">#FF05070F</color>
+    <color name="jarvis_cyan">#FF00E5FF</color>
+    <string name="accessibility_service_description">JARVIS accessibility service for screen reading and device automation</string>
+    <string name="app_name">J.A.R.V.I.S.</string>
+    <style name="Theme.Jarvis" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/jarvis_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

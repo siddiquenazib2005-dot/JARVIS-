@@ -1,0 +1,21 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+keystore/
+
+# JARVIS secrets (dev environment config — never commit)
+secrets.properties
+app/secrets.properties
+
+# Build artifacts — source repo only
+dist/
+*.apk
+*.aab

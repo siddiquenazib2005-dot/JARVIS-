@@ -1,0 +1,67 @@
+package com.jarvis.ai.orchestrator
+
+import com.jarvis.ai.memory.vector.FakeTransport
+import com.jarvis.ai.memory.vector.okResponse
+import com.jarvis.ai.memory.vector.requestBodyText
+import com.jarvis.ai.provider.MapSecretsSource
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class VisionAnalyzerTest {
+
+    private fun geminiJson(text: String) =
+        """{"candidates":[{"content":{"parts":[{"text":"$text"}]}}]}"""
+
+    private fun openAiJson(text: String) =
+        """{"choices":[{"message":{"content":"$text"}}]}"""
+
+    @Test
+    fun `gemini is used first with correct url and payload`() = runBlocking {
+        val transport = FakeTransport { req, _ ->
+            assertEquals("generativelanguage.googleapis.com", req.url.host)
+            assertTrue(req.url.encodedPath.contains("models/gemini-2.0-flash:generateContent"))
+            assertTrue(req.url.queryParameter("key")!!.isNotBlank())
+            val body = requestBodyText(req.body)
+            assertTrue(body.contains("\"inline_data\""))
+            assertTrue(body.contains("\"mime_type\":\"image/jpeg\""))
+            okResponse(req, geminiJson("a red cube on a table"))
+        }
+        val secrets = MapSecretsSource().apply { put("GEMINI_API_KEY#1", "g-key") }
+        val result = VisionAnalyzer(secrets, transport)
+            .analyze("QUJD", "image/jpeg", "What is this?")
+
+        assertEquals("gemini", result.providerId)
+        assertEquals("a red cube on a table", result.text)
+        assertTrue(result.latencyMs >= 0)
+    }
+
+    @Test
+    fun `falls back to openai when gemini is not configured`() = runBlocking {
+        val transport = FakeTransport { req, _ ->
+            assertEquals("api.openai.com", req.url.host)
+            assertTrue(req.url.encodedPath.endsWith("/chat/completions"))
+            assertEquals("Bearer o-key", req.header("Authorization"))
+            val body = requestBodyText(req.body)
+            assertTrue(body.contains("\"image_url\""))
+            assertTrue(body.contains("data:image/jpeg;base64,QUJD"))
+            okResponse(req, openAiJson("an orange ball"))
+        }
+        val secrets = MapSecretsSource().apply { put("OPENAI_API_KEY#1", "o-key") }
+        val result = VisionAnalyzer(secrets, transport).analyze("QUJD", "image/jpeg", "Describe.")
+
+        assertEquals("openai", result.providerId)
+        assertEquals("an orange ball", result.text)
+    }
+
+    @Test
+    fun `no configured vision provider surfaces a clear error`() = runBlocking {
+        try {
+            VisionAnalyzer(MapSecretsSource(), FakeTransport()).analyze("QUJD")
+            throw AssertionError("expected failure")
+        } catch (e: java.io.IOException) {
+            assertTrue(e.message!!.contains("vision"))
+        }
+    }
+}

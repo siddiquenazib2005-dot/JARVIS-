@@ -1,0 +1,586 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.jarvis.ai.accessibility.NodeResolverRobolectricTest" tests="10" skipped="0" failures="10" errors="0" timestamp="2026-08-30T10:11:36" hostname="localhost" time="6.399">
+  <properties/>
+  <testcase name="findClickableAncestor_returnsClickableParent" classname="com.jarvis.ai.accessibility.NodeResolverRobolectricTest" time="6.066">
+    <failure message="java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs" type="java.lang.UnsatisfiedLinkError">java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+	at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+	at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+	at java.base/java.lang.System.loadLibrary(System.java:2064)
+	at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:297)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:289)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:319)
+	at org.conscrypt.NativeLibraryLoader.loadLibraryFromHelperClassloader(NativeLibraryLoader.java:289)
+	at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:262)
+	at org.conscrypt.NativeLibraryLoader.load(NativeLibraryLoader.java:162)
+	at org.conscrypt.NativeLibraryLoader.loadFirstAvailable(NativeLibraryLoader.java:106)
+	at org.conscrypt.NativeCryptoJni.init(NativeCryptoJni.java:50)
+	at org.conscrypt.NativeCrypto.&lt;clinit&gt;(NativeCrypto.java:64)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:58)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:51)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:47)
+	at org.robolectric.android.internal.AndroidTestEnvironment.setUpApplicationState(AndroidTestEnvironment.java:182)
+	at org.robolectric.RobolectricTestRunner.beforeTest(RobolectricTestRunner.java:283)
+	at org.robolectric.internal.SandboxTestRunner$2.lambda$evaluate$2(SandboxTestRunner.java:285)
+	at org.robolectric.internal.bytecode.Sandbox.lambda$runOnMainThread$0(Sandbox.java:104)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+</failure>
+  </testcase>
+  <testcase name="resolveDetailed_ambiguousWhenTwoMatch" classname="com.jarvis.ai.accessibility.NodeResolverRobolectricTest" time="0.042">
+    <failure message="java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs" type="java.lang.UnsatisfiedLinkError">java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+	at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+	at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+	at java.base/java.lang.System.loadLibrary(System.java:2064)
+	at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:297)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:289)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:319)
+	at org.conscrypt.NativeLibraryLoader.loadLibraryFromHelperClassloader(NativeLibraryLoader.java:289)
+	at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:262)
+	at org.conscrypt.NativeLibraryLoader.load(NativeLibraryLoader.java:162)
+	at org.conscrypt.NativeLibraryLoader.loadFirstAvailable(NativeLibraryLoader.java:106)
+	at org.conscrypt.NativeCryptoJni.init(NativeCryptoJni.java:50)
+	at org.conscrypt.NativeCrypto.&lt;clinit&gt;(NativeCrypto.java:64)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:58)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:51)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:47)
+	at org.robolectric.android.internal.AndroidTestEnvironment.setUpApplicationState(AndroidTestEnvironment.java:182)
+	at org.robolectric.RobolectricTestRunner.beforeTest(RobolectricTestRunner.java:283)
+	at org.robolectric.internal.SandboxTestRunner$2.lambda$evaluate$2(SandboxTestRunner.java:285)
+	at org.robolectric.internal.bytecode.Sandbox.lambda$runOnMainThread$0(Sandbox.java:104)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+</failure>
+  </testcase>
+  <testcase name="center_returnsBoundsMidpoint" classname="com.jarvis.ai.accessibility.NodeResolverRobolectricTest" time="0.038">
+    <failure message="java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs" type="java.lang.UnsatisfiedLinkError">java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+	at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+	at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+	at java.base/java.lang.System.loadLibrary(System.java:2064)
+	at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:297)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:289)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:319)
+	at org.conscrypt.NativeLibraryLoader.loadLibraryFromHelperClassloader(NativeLibraryLoader.java:289)
+	at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:262)
+	at org.conscrypt.NativeLibraryLoader.load(NativeLibraryLoader.java:162)
+	at org.conscrypt.NativeLibraryLoader.loadFirstAvailable(NativeLibraryLoader.java:106)
+	at org.conscrypt.NativeCryptoJni.init(NativeCryptoJni.java:50)
+	at org.conscrypt.NativeCrypto.&lt;clinit&gt;(NativeCrypto.java:64)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:58)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:51)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:47)
+	at org.robolectric.android.internal.AndroidTestEnvironment.setUpApplicationState(AndroidTestEnvironment.java:182)
+	at org.robolectric.RobolectricTestRunner.beforeTest(RobolectricTestRunner.java:283)
+	at org.robolectric.internal.SandboxTestRunner$2.lambda$evaluate$2(SandboxTestRunner.java:285)
+	at org.robolectric.internal.bytecode.Sandbox.lambda$runOnMainThread$0(Sandbox.java:104)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+</failure>
+  </testcase>
+  <testcase name="resolve_missingText_returnsNull" classname="com.jarvis.ai.accessibility.NodeResolverRobolectricTest" time="0.034">
+    <failure message="java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs" type="java.lang.UnsatisfiedLinkError">java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+	at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+	at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+	at java.base/java.lang.System.loadLibrary(System.java:2064)
+	at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:297)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:289)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:319)
+	at org.conscrypt.NativeLibraryLoader.loadLibraryFromHelperClassloader(NativeLibraryLoader.java:289)
+	at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:262)
+	at org.conscrypt.NativeLibraryLoader.load(NativeLibraryLoader.java:162)
+	at org.conscrypt.NativeLibraryLoader.loadFirstAvailable(NativeLibraryLoader.java:106)
+	at org.conscrypt.NativeCryptoJni.init(NativeCryptoJni.java:50)
+	at org.conscrypt.NativeCrypto.&lt;clinit&gt;(NativeCrypto.java:64)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:58)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:51)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:47)
+	at org.robolectric.android.internal.AndroidTestEnvironment.setUpApplicationState(AndroidTestEnvironment.java:182)
+	at org.robolectric.RobolectricTestRunner.beforeTest(RobolectricTestRunner.java:283)
+	at org.robolectric.internal.SandboxTestRunner$2.lambda$evaluate$2(SandboxTestRunner.java:285)
+	at org.robolectric.internal.bytecode.Sandbox.lambda$runOnMainThread$0(Sandbox.java:104)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+</failure>
+  </testcase>
+  <testcase name="findEditable_findsEditText" classname="com.jarvis.ai.accessibility.NodeResolverRobolectricTest" time="0.035">
+    <failure message="java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs" type="java.lang.UnsatisfiedLinkError">java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+	at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+	at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+	at java.base/java.lang.System.loadLibrary(System.java:2064)
+	at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:297)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:289)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:319)
+	at org.conscrypt.NativeLibraryLoader.loadLibraryFromHelperClassloader(NativeLibraryLoader.java:289)
+	at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:262)
+	at org.conscrypt.NativeLibraryLoader.load(NativeLibraryLoader.java:162)
+	at org.conscrypt.NativeLibraryLoader.loadFirstAvailable(NativeLibraryLoader.java:106)
+	at org.conscrypt.NativeCryptoJni.init(NativeCryptoJni.java:50)
+	at org.conscrypt.NativeCrypto.&lt;clinit&gt;(NativeCrypto.java:64)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:58)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:51)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:47)
+	at org.robolectric.android.internal.AndroidTestEnvironment.setUpApplicationState(AndroidTestEnvironment.java:182)
+	at org.robolectric.RobolectricTestRunner.beforeTest(RobolectricTestRunner.java:283)
+	at org.robolectric.internal.SandboxTestRunner$2.lambda$evaluate$2(SandboxTestRunner.java:285)
+	at org.robolectric.internal.bytecode.Sandbox.lambda$runOnMainThread$0(Sandbox.java:104)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+</failure>
+  </testcase>
+  <testcase name="resolveDetailed_exactReturnsFound" classname="com.jarvis.ai.accessibility.NodeResolverRobolectricTest" time="0.049">
+    <failure message="java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs" type="java.lang.UnsatisfiedLinkError">java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+	at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+	at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+	at java.base/java.lang.System.loadLibrary(System.java:2064)
+	at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:297)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:289)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:319)
+	at org.conscrypt.NativeLibraryLoader.loadLibraryFromHelperClassloader(NativeLibraryLoader.java:289)
+	at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:262)
+	at org.conscrypt.NativeLibraryLoader.load(NativeLibraryLoader.java:162)
+	at org.conscrypt.NativeLibraryLoader.loadFirstAvailable(NativeLibraryLoader.java:106)
+	at org.conscrypt.NativeCryptoJni.init(NativeCryptoJni.java:50)
+	at org.conscrypt.NativeCrypto.&lt;clinit&gt;(NativeCrypto.java:64)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:58)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:51)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:47)
+	at org.robolectric.android.internal.AndroidTestEnvironment.setUpApplicationState(AndroidTestEnvironment.java:182)
+	at org.robolectric.RobolectricTestRunner.beforeTest(RobolectricTestRunner.java:283)
+	at org.robolectric.internal.SandboxTestRunner$2.lambda$evaluate$2(SandboxTestRunner.java:285)
+	at org.robolectric.internal.bytecode.Sandbox.lambda$runOnMainThread$0(Sandbox.java:104)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+</failure>
+  </testcase>
+  <testcase name="findEditable_byTargetText" classname="com.jarvis.ai.accessibility.NodeResolverRobolectricTest" time="0.031">
+    <failure message="java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs" type="java.lang.UnsatisfiedLinkError">java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+	at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+	at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+	at java.base/java.lang.System.loadLibrary(System.java:2064)
+	at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:297)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:289)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:319)
+	at org.conscrypt.NativeLibraryLoader.loadLibraryFromHelperClassloader(NativeLibraryLoader.java:289)
+	at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:262)
+	at org.conscrypt.NativeLibraryLoader.load(NativeLibraryLoader.java:162)
+	at org.conscrypt.NativeLibraryLoader.loadFirstAvailable(NativeLibraryLoader.java:106)
+	at org.conscrypt.NativeCryptoJni.init(NativeCryptoJni.java:50)
+	at org.conscrypt.NativeCrypto.&lt;clinit&gt;(NativeCrypto.java:64)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:58)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:51)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:47)
+	at org.robolectric.android.internal.AndroidTestEnvironment.setUpApplicationState(AndroidTestEnvironment.java:182)
+	at org.robolectric.RobolectricTestRunner.beforeTest(RobolectricTestRunner.java:283)
+	at org.robolectric.internal.SandboxTestRunner$2.lambda$evaluate$2(SandboxTestRunner.java:285)
+	at org.robolectric.internal.bytecode.Sandbox.lambda$runOnMainThread$0(Sandbox.java:104)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+</failure>
+  </testcase>
+  <testcase name="resolveDetailed_notFoundWhenMissing" classname="com.jarvis.ai.accessibility.NodeResolverRobolectricTest" time="0.033">
+    <failure message="java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs" type="java.lang.UnsatisfiedLinkError">java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+	at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+	at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+	at java.base/java.lang.System.loadLibrary(System.java:2064)
+	at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:297)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:289)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:319)
+	at org.conscrypt.NativeLibraryLoader.loadLibraryFromHelperClassloader(NativeLibraryLoader.java:289)
+	at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:262)
+	at org.conscrypt.NativeLibraryLoader.load(NativeLibraryLoader.java:162)
+	at org.conscrypt.NativeLibraryLoader.loadFirstAvailable(NativeLibraryLoader.java:106)
+	at org.conscrypt.NativeCryptoJni.init(NativeCryptoJni.java:50)
+	at org.conscrypt.NativeCrypto.&lt;clinit&gt;(NativeCrypto.java:64)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:58)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:51)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:47)
+	at org.robolectric.android.internal.AndroidTestEnvironment.setUpApplicationState(AndroidTestEnvironment.java:182)
+	at org.robolectric.RobolectricTestRunner.beforeTest(RobolectricTestRunner.java:283)
+	at org.robolectric.internal.SandboxTestRunner$2.lambda$evaluate$2(SandboxTestRunner.java:285)
+	at org.robolectric.internal.bytecode.Sandbox.lambda$runOnMainThread$0(Sandbox.java:104)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+</failure>
+  </testcase>
+  <testcase name="resolve_exactText_findsButton" classname="com.jarvis.ai.accessibility.NodeResolverRobolectricTest" time="0.033">
+    <failure message="java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs" type="java.lang.UnsatisfiedLinkError">java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+	at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+	at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+	at java.base/java.lang.System.loadLibrary(System.java:2064)
+	at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:297)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:289)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:319)
+	at org.conscrypt.NativeLibraryLoader.loadLibraryFromHelperClassloader(NativeLibraryLoader.java:289)
+	at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:262)
+	at org.conscrypt.NativeLibraryLoader.load(NativeLibraryLoader.java:162)
+	at org.conscrypt.NativeLibraryLoader.loadFirstAvailable(NativeLibraryLoader.java:106)
+	at org.conscrypt.NativeCryptoJni.init(NativeCryptoJni.java:50)
+	at org.conscrypt.NativeCrypto.&lt;clinit&gt;(NativeCrypto.java:64)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:58)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:51)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:47)
+	at org.robolectric.android.internal.AndroidTestEnvironment.setUpApplicationState(AndroidTestEnvironment.java:182)
+	at org.robolectric.RobolectricTestRunner.beforeTest(RobolectricTestRunner.java:283)
+	at org.robolectric.internal.SandboxTestRunner$2.lambda$evaluate$2(SandboxTestRunner.java:285)
+	at org.robolectric.internal.bytecode.Sandbox.lambda$runOnMainThread$0(Sandbox.java:104)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+</failure>
+  </testcase>
+  <testcase name="resolve_partialText_findsButton" classname="com.jarvis.ai.accessibility.NodeResolverRobolectricTest" time="0.032">
+    <failure message="java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs" type="java.lang.UnsatisfiedLinkError">java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+	at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+	at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+	at java.base/java.lang.System.loadLibrary(System.java:2064)
+	at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:297)
+	at org.conscrypt.NativeLibraryLoader$1.run(NativeLibraryLoader.java:289)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:319)
+	at org.conscrypt.NativeLibraryLoader.loadLibraryFromHelperClassloader(NativeLibraryLoader.java:289)
+	at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:262)
+	at org.conscrypt.NativeLibraryLoader.load(NativeLibraryLoader.java:162)
+	at org.conscrypt.NativeLibraryLoader.loadFirstAvailable(NativeLibraryLoader.java:106)
+	at org.conscrypt.NativeCryptoJni.init(NativeCryptoJni.java:50)
+	at org.conscrypt.NativeCrypto.&lt;clinit&gt;(NativeCrypto.java:64)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:58)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:51)
+	at org.conscrypt.OpenSSLProvider.&lt;init&gt;(OpenSSLProvider.java:47)
+	at org.robolectric.android.internal.AndroidTestEnvironment.setUpApplicationState(AndroidTestEnvironment.java:182)
+	at org.robolectric.RobolectricTestRunner.beforeTest(RobolectricTestRunner.java:283)
+	at org.robolectric.internal.SandboxTestRunner$2.lambda$evaluate$2(SandboxTestRunner.java:285)
+	at org.robolectric.internal.bytecode.Sandbox.lambda$runOnMainThread$0(Sandbox.java:104)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni-linux-aarch_64 in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt_openjdk_jni in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		... 26 more
+	Suppressed: java.lang.UnsatisfiedLinkError: no conscrypt in java.library.path: /usr/java/packages/lib:/usr/lib/aarch64-linux-gnu/jni:/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib/jni:/lib:/usr/lib:/root/JarvisAI/app/src/testDebug/jniLibs:/root/JarvisAI/app/src/test/jniLibs
+		at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2458)
+		at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+		at java.base/java.lang.System.loadLibrary(System.java:2064)
+		at org.conscrypt.NativeLibraryUtil.loadLibrary(NativeLibraryUtil.java:54)
+		at org.conscrypt.NativeLibraryLoader.loadLibraryFromCurrentClassloader(NativeLibraryLoader.java:318)
+		at org.conscrypt.NativeLibraryLoader.loadLibrary(NativeLibraryLoader.java:273)
+		... 15 more
+</failure>
+  </testcase>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

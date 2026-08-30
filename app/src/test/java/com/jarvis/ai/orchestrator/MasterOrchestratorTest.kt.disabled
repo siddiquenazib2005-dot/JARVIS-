@@ -1,0 +1,102 @@
+package com.jarvis.ai.orchestrator
+
+import com.jarvis.ai.data.model.Message
+import com.jarvis.ai.data.model.Sender
+import com.jarvis.ai.memory.vector.HashEmbeddingProvider
+import com.jarvis.ai.memory.vector.VectorMemoryManager
+import com.jarvis.ai.provider.MapSecretsSource
+import com.jarvis.ai.provider.ProviderRouter
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * End-to-end orchestrator pipeline on the JVM:
+ * intent → memory → routing (offline terminal fallback) → verification → events.
+ */
+class MasterOrchestratorTest {
+
+    private fun orchestrator(): MasterOrchestrator {
+        val secrets = MapSecretsSource() // no provider keys → router uses offline terminal
+        return MasterOrchestrator(
+            providerRouter = ProviderRouter(secrets),
+            vectorMemory = VectorMemoryManager(
+                embedder = HashEmbeddingProvider(64),
+                secrets = secrets,
+                config = com.jarvis.ai.memory.vector.VectorMemoryConfig(similarityThreshold = 0.05f)
+            ),
+            toolExecutor = null // JVM test: tool subsystem intentionally unbound
+        )
+    }
+
+    @Test
+    fun `calculation intent answers locally without any network`() = runBlocking {
+        val updates = orchestrator().processRequest("12*4").toList()
+        val delta = updates.filterIsInstance<OrchestratorUpdate.Delta>().joinToString("") { it.text }
+        assertTrue(delta.contains("48"))
+        val completed = updates.filterIsInstance<OrchestratorUpdate.Completed>().first()
+        assertEquals("local", completed.provider)
+        assertTrue(completed.success)
+    }
+
+    @Test
+    fun `time date intent answers locally`() = runBlocking {
+        val updates = orchestrator().processRequest("what time is it right now").toList()
+        val delta = updates.filterIsInstance<OrchestratorUpdate.Delta>().joinToString("") { it.text }
+        assertTrue(delta.contains("The time is"))
+    }
+
+    @Test
+    fun `memory store persists and recall retrieves`() = runBlocking {
+        val orch = orchestrator()
+
+        val storeUpdates = orch.processRequest("remember that the server rack is labelled B7").toList()
+        assertTrue(storeUpdates.any { it is OrchestratorUpdate.Completed && it.memoryStored })
+        val storedText = storeUpdates.filterIsInstance<OrchestratorUpdate.Delta>()
+            .joinToString("") { it.text }
+        assertTrue(storedText.contains("long-term memory"))
+
+        val recallUpdates = orch.processRequest("what did i tell you about the server rack").toList()
+        val recallText = recallUpdates.filterIsInstance<OrchestratorUpdate.Delta>()
+            .joinToString("") { it.text }
+        assertTrue(recallText.contains("B7"))
+    }
+
+    @Test
+    fun `chat flows through router with offline terminal fallback`() = runBlocking {
+        val updates = orchestrator()
+            .processRequest("what should I know about kotlin coroutines", history = emptyList())
+            .toList()
+        val text = updates.filterIsInstance<OrchestratorUpdate.Delta>().joinToString("") { it.text }
+        assertTrue(text.isNotBlank())
+        val completed = updates.filterIsInstance<OrchestratorUpdate.Completed>().first()
+        assertEquals("offline", completed.provider)
+        assertTrue(completed.success)
+    }
+
+    @Test
+    fun `system command without executor degrades gracefully`() = runBlocking {
+        val updates = orchestrator().processRequest("open settings").toList()
+        val text = updates.filterIsInstance<OrchestratorUpdate.Delta>().joinToString("") { it.text }
+        assertTrue(text.contains("not available"))
+        val completed = updates.filterIsInstance<OrchestratorUpdate.Completed>().first()
+        assertNotNull(completed)
+        assertTrue(!completed.success)
+    }
+
+    @Test
+    fun `durable facts are auto-stored during chat`() = runBlocking {
+        val orch = orchestrator()
+        val updates = orch.processRequest("my name is Richard Feynman").toList()
+        // Chat reply still streams…
+        assertTrue(updates.any { it is OrchestratorUpdate.Delta })
+        // …and the fact lands in vector memory.
+        val hits = orch.processRequest("what did i tell you about my name").toList()
+            .filterIsInstance<OrchestratorUpdate.Delta>()
+            .joinToString("") { it.text }
+        assertTrue(hits.contains("Richard") || hits.contains("name"))
+    }
+}

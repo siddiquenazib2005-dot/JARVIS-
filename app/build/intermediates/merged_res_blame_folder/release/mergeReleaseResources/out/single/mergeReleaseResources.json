@@ -1,0 +1,22 @@
+[
+    {
+        "merged": "com.jarvis.ai.app-release-57:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.jarvis.ai.app-main-58:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.jarvis.ai.app-release-57:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.jarvis.ai.app-main-58:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.jarvis.ai.app-release-57:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.jarvis.ai.app-main-58:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.jarvis.ai.app-release-57:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.jarvis.ai.app-main-58:/drawable/ic_launcher_background.xml"
+    },
+    {
+        "merged": "com.jarvis.ai.app-release-57:/xml_accessibility_service_config.xml.flat",
+        "source": "com.jarvis.ai.app-main-58:/xml/accessibility_service_config.xml"
+    }
+]
