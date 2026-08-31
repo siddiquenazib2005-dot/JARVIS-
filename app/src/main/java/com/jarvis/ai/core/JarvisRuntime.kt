@@ -115,6 +115,11 @@ class JarvisRuntime private constructor(context: Context) {
         
         // Now set the orchestrator on agentCore (breaks circular dependency)
         agentCore.orchestrator = masterOrchestrator
+        // ...and the reverse link: masterOrchestrator was built with agentCore=null
+        // (required to break the same circular dependency). Without this line
+        // MasterOrchestrator.agentCore stays null forever and every
+        // DEVICE_AUTOMATION request silently no-ops behind a fake success message.
+        masterOrchestrator.agentCore = agentCore
     }
 
     fun bootstrap() {

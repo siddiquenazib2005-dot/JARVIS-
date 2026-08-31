@@ -57,7 +57,14 @@ class MasterOrchestrator(
     /** Null only in JVM tests; device builds always bind a real executor. */
     private val toolExecutor: ToolExecutor? = null,
     private val taskRouter: TaskRouter? = null,
-    private val agentCore: AgentCore? = null
+    /**
+     * var (not val): AgentCore and MasterOrchestrator have a circular
+     * dependency, so JarvisRuntime constructs this with agentCore=null and
+     * wires the real instance in right after — see
+     * JarvisRuntime.initializeOrchestrator(). Must stay mutable or
+     * DEVICE_AUTOMATION requests silently no-op forever.
+     */
+    var agentCore: AgentCore? = null
 ) {
 
     private val agentLoop = AgentLoop(AgentLimits())
