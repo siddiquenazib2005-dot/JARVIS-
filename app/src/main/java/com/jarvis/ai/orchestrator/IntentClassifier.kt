@@ -48,6 +48,21 @@ object IntentClassifier {
 
     private val QUESTION_WORDS = listOf("what", "how", "why", "who", "where", "when")
 
+    // ------------------------------------------------------------------
+    // Messaging (SMS / WhatsApp) — supports both English and common
+    // Hinglish phrasings, since Levinho's voice input is Hindi-English mixed.
+    // ------------------------------------------------------------------
+
+    private val MESSAGING_TRIGGER_WORDS = listOf("sms", "whatsapp", "text ", "message ")
+
+    /** Regexes tried in order; first match wins. Groups vary per pattern, handled in parseMessagingRequest. */
+    private val MSG_PATTERN_TO = Regex("""^(?:send\s+)?(sms|whatsapp)\s+to\s+(\S+)\s+(.+)$""")
+    private val MSG_PATTERN_DIRECT = Regex("""^(sms|whatsapp)\s+(\S+)\s+(.+)$""")
+    private val MSG_PATTERN_TEXT = Regex("""^text\s+(\S+)\s+(.+)$""")
+    private val MSG_PATTERN_MESSAGE = Regex("""^message\s+(\S+)\s+(?:saying\s+)?(.+)$""")
+    /** Hinglish: "NAZIB ko whatsapp karo hii" / "ritik ko sms bhejo call me" */
+    private val MSG_PATTERN_KO = Regex("""^(\S+)\s+ko\s+(sms|whatsapp)\s+(?:karo\s+|bhejo\s+|bolo\s+)?(.+)$""")
+
     /** Classifies a user request intent. */
     fun classifyIntent(request: String, context: Map<String, Any?> = emptyMap()): Classification {
         val normalized = request.trim().lowercase()
@@ -70,6 +85,24 @@ object IntentClassifier {
                 requiresAi = false,
                 needsConfirmation = false
             )
+        }
+
+        // Messaging: checked early (high specificity) and before automation/system
+        // so "sms"/"whatsapp"/"text " keywords never get swallowed by generic buckets.
+        if (isMessagingRequest(normalized)) {
+            val parsed = parseMessagingRequest(normalized)
+            if (parsed != null) {
+                val (type, contact, message) = parsed
+                return Classification(
+                    intent = if (type == "whatsapp") "SEND_WHATSAPP" else "SEND_SMS",
+                    confidence = 0.9f,
+                    parameters = mapOf("contact" to contact, "message" to message),
+                    requiresAi = false,
+                    needsConfirmation = true
+                )
+            }
+            // Keyword matched but couldn't parse contact/message — let AI chat handle
+            // it as a clarifying conversation rather than silently failing here.
         }
 
         // Check automation FIRST - more specific than generic system commands
@@ -174,6 +207,39 @@ private fun extractAutomationCommand(text: String): String = text
     private fun isChatRequest(text: String): Boolean {
         val isQuestion = QUESTION_WORDS.any { text.startsWith("$it ") }
         return isQuestion && !isCalculationRequest(text) && !isSystemCommand(text)
+    }
+
+    private fun isMessagingRequest(text: String): Boolean =
+        containsAny(text, MESSAGING_TRIGGER_WORDS) && (text.contains(" to ") || text.contains(" ko "))
+
+    /**
+     * Extracts (type, contact, message) from a normalized messaging command.
+     * Tries each known phrasing in order; returns null if none match (falls
+     * back to CHAT so the AI can ask a clarifying question instead of failing
+     * silently).
+     */
+    private fun parseMessagingRequest(text: String): Triple<String, String, String>? {
+        MSG_PATTERN_TO.find(text)?.let { m ->
+            val (type, contact, message) = m.destructured
+            return Triple(type, contact, message.trim())
+        }
+        MSG_PATTERN_DIRECT.find(text)?.let { m ->
+            val (type, contact, message) = m.destructured
+            return Triple(type, contact, message.trim())
+        }
+        MSG_PATTERN_KO.find(text)?.let { m ->
+            val (contact, type, message) = m.destructured
+            return Triple(type, contact, message.trim())
+        }
+        MSG_PATTERN_TEXT.find(text)?.let { m ->
+            val (contact, message) = m.destructured
+            return Triple("sms", contact, message.trim())
+        }
+        MSG_PATTERN_MESSAGE.find(text)?.let { m ->
+            val (contact, message) = m.destructured
+            return Triple("sms", contact, message.trim())
+        }
+        return null
     }
 
     private fun containsAny(text: String, needles: List<String>): Boolean =

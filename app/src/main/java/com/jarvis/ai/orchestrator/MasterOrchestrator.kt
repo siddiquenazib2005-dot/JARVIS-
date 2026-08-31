@@ -93,8 +93,16 @@ class MasterOrchestrator(
                     memoryStored = handleMemory(classification, input)
                 }
 
-                "SYSTEM_COMMAND" -> {
-                    EventBus.publish(EventType.INTENT_DETECTED, "SYSTEM_COMMAND")
+                // SEND_SMS / SEND_WHATSAPP reuse the same single-step tool-execution
+                // path as SYSTEM_COMMAND: TaskPlanner.createPlan() already maps these
+                // two intents to the "send_sms"/"send_whatsapp" tools (see
+                // TaskPlanner.determineToolForIntent), and classification.parameters
+                // already carries {"contact":..., "message":...} from
+                // IntentClassifier.parseMessagingRequest(). Without this case these
+                // intents fell through to the `else` (CHAT) branch and were never
+                // executed — only replied to conversationally.
+                "SYSTEM_COMMAND", "SEND_SMS", "SEND_WHATSAPP" -> {
+                    EventBus.publish(EventType.INTENT_DETECTED, classification.intent)
                     handleSystemCommand(classification, input, userConfirmedThisTurn).forEach { update ->
                         emit(update)
                     }
@@ -192,6 +200,7 @@ class MasterOrchestrator(
      */
     suspend fun analyzeImage(base64Image: String, mimeType: String, prompt: String): VisionAnalyzer.VisionResult =
         VisionAnalyzer(providerRouter, visionSecrets).analyze(base64Image, mimeType, prompt)
+
     /** Emits memory-operation replies; returns true when something was stored. */
     private suspend fun kotlinx.coroutines.flow.FlowCollector<OrchestratorUpdate>.handleMemory(
         classification: IntentClassifier.Classification,
