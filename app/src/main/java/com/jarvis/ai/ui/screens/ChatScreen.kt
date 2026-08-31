@@ -161,8 +161,15 @@ fun ChatScreen(
 
     fun dispatch(text: String) {
         keyboard?.hide()
-        viewModel.send(text)
-        input = ""
+        if (state.hasPendingConfirmation) {
+            // The input is still being edited separately, but a tool is waiting
+            // for explicit confirmation — this SEND acts as the "yes" so the
+            // gated tool actually runs instead of re-prompting forever.
+            viewModel.confirmPendingAction()
+        } else {
+            viewModel.send(text)
+            input = ""
+        }
     }
 
     ModalNavigationDrawer(

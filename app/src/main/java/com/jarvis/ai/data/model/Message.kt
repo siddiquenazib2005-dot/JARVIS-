@@ -38,6 +38,8 @@ data class UiState(
     val isListening: Boolean = false,
     val isSpeaking: Boolean = false,
     val notice: String? = null,
+    /** True while a tool is awaiting explicit user confirmation (SEND confirms it). */
+    val hasPendingConfirmation: Boolean = false,
     /** Provider that served the last reply (from the router's execution report). */
     val activeProvider: String = "",
     /** True when at least one provider key is provisioned in the secure backend. */

@@ -160,6 +160,8 @@ class JarvisViewModel(
     }
 
     fun send(rawInput: String) {
+        pendingConfirmation = null
+        _uiState.update { it.copy(hasPendingConfirmation = false) }
         dispatchToOrchestrator(rawInput, confirmed = false)
     }
 
@@ -167,6 +169,7 @@ class JarvisViewModel(
     fun confirmPendingAction() {
         val pending = pendingConfirmation ?: return
         pendingConfirmation = null
+        _uiState.update { it.copy(hasPendingConfirmation = false) }
         dispatchToOrchestrator(pending, confirmed = true)
     }
 
@@ -230,6 +233,7 @@ class JarvisViewModel(
 
                         is OrchestratorUpdate.Confirmation -> {
                             pendingConfirmation = trimmed
+                            _uiState.update { it.copy(hasPendingConfirmation = true) }
                             setNotice("${update.message} (Tap SEND to confirm.)")
                         }
 
