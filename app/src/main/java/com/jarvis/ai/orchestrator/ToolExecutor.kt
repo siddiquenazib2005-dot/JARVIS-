@@ -1,16 +1,21 @@
 package com.jarvis.ai.orchestrator
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.BatteryManager
 import android.provider.Settings
+import android.telephony.SmsManager
 import android.util.Log
+import androidx.core.content.ContextCompat
+import com.jarvis.ai.accessibility.JarvisAccessibilityService
 import com.jarvis.ai.data.model.Message
 import com.jarvis.ai.data.model.Sender
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.net.URLEncoder
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.CancellationException
 
@@ -47,6 +52,10 @@ class ToolExecutor(private val context: Context) {
      * automatically, CONFIRM_REQUIRED needs an explicit user confirmation for
      * the current turn, HIGH_RISK is refused outright when unconfirmed and
      * audited either way. Every decision lands in the append-only AuditLog.
+     *
+     * "send_sms" and "send_whatsapp" are not in ToolPermissions' explicit map,
+     * so they fall through to the map's default — CONFIRM_REQUIRED — which is
+     * exactly right for anything that sends a message to another person.
      */
     suspend fun executeTool(
         toolName: String,
@@ -94,6 +103,8 @@ class ToolExecutor(private val context: Context) {
                 "get_battery_status" -> executeGetBatteryStatus(parameters)
                 "get_device_status" -> executeGetDeviceStatus(parameters)
                 "calculate" -> executeCalculate(parameters)
+                "send_sms" -> executeSendSms(parameters)
+                "send_whatsapp" -> executeSendWhatsapp(parameters)
                 else -> ToolResult.Failure(
                     toolName = toolName,
                     error = "Unknown tool: $toolName",
@@ -114,6 +125,12 @@ class ToolExecutor(private val context: Context) {
             "get_battery_status" -> true
             "get_device_status" -> true
             "calculate" -> parameters["expression"] is String
+            "send_sms", "send_whatsapp" -> {
+                val hasRecipient = (parameters["phoneNumber"] as? String)?.isNotBlank() == true ||
+                    (parameters["contact"] as? String)?.isNotBlank() == true
+                val hasMessage = (parameters["message"] as? String)?.isNotBlank() == true
+                hasRecipient && hasMessage
+            }
             else -> false
         }
     }
@@ -335,6 +352,158 @@ class ToolExecutor(private val context: Context) {
             )
         }
     }
+
+    // ------------------------------------------------------------------
+    // Recipient resolution (shared by send_sms and send_whatsapp)
+    // ------------------------------------------------------------------
+
+    /**
+     * Resolves a recipient to a raw phone number, preferring an explicit
+     * "phoneNumber" parameter over a "contact" name lookup via
+     * [ContactsResolver]. Returns null (with the caller producing a Failure)
+     * when neither is usable.
+     */
+    private fun resolveRecipientNumber(parameters: Map<String, Any?>): String? {
+        val explicit = (parameters["phoneNumber"] as? String)?.trim()
+        if (!explicit.isNullOrBlank()) return explicit
+
+        val contactName = (parameters["contact"] as? String)?.trim()
+        if (contactName.isNullOrBlank()) return null
+
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.w(TAG, "resolveRecipientNumber: READ_CONTACTS not granted, cannot resolve '$contactName'")
+            return null
+        }
+        return ContactsResolver.resolvePhoneNumber(context, contactName)
+    }
+
+    /** Executes the send_sms tool via SmsManager — no UI automation involved. */
+    private suspend fun executeSendSms(parameters: Map<String, Any?>): ToolResult {
+        val message = (parameters["message"] as? String)?.trim()
+        if (message.isNullOrBlank()) {
+            return ToolResult.Failure(
+                toolName = "send_sms", error = "Missing message parameter", recoverable = false
+            )
+        }
+        val number = resolveRecipientNumber(parameters)
+            ?: return ToolResult.Failure(
+                toolName = "send_sms",
+                error = "Could not resolve a phone number for the recipient",
+                recoverable = false
+            )
+
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            return ToolResult.Failure(
+                toolName = "send_sms",
+                error = "SEND_SMS permission not granted. Enable it in Settings → Apps → JARVIS → Permissions.",
+                recoverable = false
+            )
+        }
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val smsManager = SmsManager.getDefault()
+                // Split long messages across multiple parts automatically.
+                val parts = smsManager.divideMessage(message)
+                smsManager.sendMultipartTextMessage(number, null, parts, null, null)
+                ToolResult.Success(
+                    toolName = "send_sms",
+                    data = mapOf("to" to number),
+                    message = "SMS sent, sir."
+                )
+            } catch (e: Exception) {
+                ToolResult.Failure(
+                    toolName = "send_sms",
+                    error = "Failed to send SMS: ${e.message}",
+                    recoverable = true
+                )
+            }
+        }
+    }
+
+    /**
+     * Executes the send_whatsapp tool.
+     *
+     * Strategy: build a `https://wa.me/<number>?text=<message>` deep link so
+     * WhatsApp opens directly on the target chat with the message already
+     * typed — no contact-search or text-typing automation needed, which
+     * removes the two most fragile steps. The only automated UI action left
+     * is a single tap on the Send button, targeted by its resource id
+     * (`com.whatsapp:id/send`), which is far more stable across WhatsApp app
+     * updates than matching on visible text.
+     */
+    private suspend fun executeSendWhatsapp(parameters: Map<String, Any?>): ToolResult {
+        val message = (parameters["message"] as? String)?.trim()
+        if (message.isNullOrBlank()) {
+            return ToolResult.Failure(
+                toolName = "send_whatsapp", error = "Missing message parameter", recoverable = false
+            )
+        }
+        val rawNumber = resolveRecipientNumber(parameters)
+            ?: return ToolResult.Failure(
+                toolName = "send_whatsapp",
+                error = "Could not resolve a phone number for the recipient",
+                recoverable = false
+            )
+        val digitsOnly = rawNumber.filter { it.isDigit() || it == '+' }
+        if (digitsOnly.length < 8) {
+            return ToolResult.Failure(
+                toolName = "send_whatsapp",
+                error = "Resolved phone number looks invalid: $rawNumber",
+                recoverable = false
+            )
+        }
+
+        val service = JarvisAccessibilityService.instance
+            ?: return ToolResult.Failure(
+                toolName = "send_whatsapp",
+                error = "Accessibility service not enabled. Enable JARVIS in Settings → Accessibility.",
+                recoverable = false
+            )
+
+        val encodedMessage = withContext(Dispatchers.IO) {
+            runCatching { URLEncoder.encode(message, "UTF-8") }.getOrDefault(message)
+        }
+        val uri = Uri.parse("https://wa.me/$digitsOnly?text=$encodedMessage")
+        val intent = Intent(Intent.ACTION_VIEW, uri)
+
+        val opened = service.launchIntentAndVerify(intent, "com.whatsapp")
+        if (opened.isFailure) {
+            return ToolResult.Failure(
+                toolName = "send_whatsapp",
+                error = opened.message ?: "Could not open WhatsApp chat",
+                recoverable = true
+            )
+        }
+
+        val sendButtonReady = service.waitForId("com.whatsapp:id/send", timeoutMs = 4000)
+        if (sendButtonReady.isFailure) {
+            return ToolResult.Failure(
+                toolName = "send_whatsapp",
+                error = "WhatsApp chat opened but Send button never appeared: ${sendButtonReady.message}",
+                recoverable = true
+            )
+        }
+
+        val tapped = service.tapById("com.whatsapp:id/send")
+        return if (tapped.isFailure) {
+            ToolResult.Failure(
+                toolName = "send_whatsapp",
+                error = "Message pre-filled but could not tap Send: ${tapped.message}",
+                recoverable = true
+            )
+        } else {
+            ToolResult.Success(
+                toolName = "send_whatsapp",
+                data = mapOf("to" to digitsOnly),
+                message = "WhatsApp message sent, sir."
+            )
+        }
+    }
 }
 
 /** Result verifier for tool execution outcomes. */
@@ -384,7 +553,7 @@ class TaskPlanner {
 
     /** Creates an execution plan for a multi-step request. */
     fun createPlan(request: String, classification: IntentClassifier.Classification): ExecutionPlan? {
-        val normalized = request.trim().toLowerCase()
+        val normalized = request.trim().lowercase()
 
         // Check for multi-step patterns
         if (isMultiStepRequest(normalized)) {
@@ -462,6 +631,8 @@ class TaskPlanner {
             "TIME_DATE" -> "get_device_status" // or a dedicated time tool
             "CALCULATION" -> "calculate"
             "MEMORY" -> "memory" // placeholder
+            "SEND_SMS" -> "send_sms"
+            "SEND_WHATSAPP" -> "send_whatsapp"
             else -> null
         }
     }

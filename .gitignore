@@ -19,3 +19,6 @@ app/secrets.properties
 dist/
 *.apk
 *.aab
+
+# Whole app build dir (tracked build artifacts from an early commit)
+app/build/
