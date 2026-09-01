@@ -22,6 +22,8 @@ import com.jarvis.ai.orchestrator.OrchestratorUpdate
 import com.jarvis.ai.orchestrator.ToolExecutor
 import com.jarvis.ai.presence.PresenceGate
 import com.jarvis.ai.proactive.ProactiveEngine
+import com.jarvis.ai.provider.Capability
+import com.jarvis.ai.provider.ProviderRegistry
 import com.jarvis.ai.service.AudioLevelEngine
 import com.jarvis.ai.service.SpeechRecognitionManager
 import com.jarvis.ai.service.SentenceParser
@@ -337,6 +339,49 @@ class JarvisViewModel(
     }
 
     fun healthSnapshot(): com.jarvis.ai.health.HealthReport = healthReporter.report()
+
+    /** Persists a provider API key into the AndroidKeyStore-encrypted secure store. */
+    fun saveProviderKey(envName: String, value: String) {
+        val key = value.trim()
+        if (key.isEmpty()) return
+        runtime.secureStore.put(envName, key)
+        // Force provider manager to re-discover configuration so routing picks it up
+        // without requiring an app restart.
+        runtime.providerManager.bootstrapFromSecrets()
+    }
+
+    /** Returns the providers that currently have a key stored (configured=true). */
+    fun configuredProviders(): List<String> =
+        runtime.providerManager.configuredProviderIds()
+
+    fun hasKey(envName: String): Boolean =
+        runtime.secrets.get("$envName#1").orEmpty().isNotBlank()
+
+    /** Presents the typed keys, stores them, and live-probes all configured LLM providers. */
+    fun testAndSaveKeys(
+        typed: Map<String, String>,
+        onResult: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            // Persist non-blank typed keys first.
+            typed.forEach { (envName, value) ->
+                if (value.isNotBlank() && value != "••••••••") {
+                    saveProviderKey(envName, value)
+                }
+            }
+            runtime.providerManager.bootstrapFromSecrets()
+            val results = runCatching {
+                runtime.providerManager.healthCheck(Capability.CHAT)
+            }.getOrDefault(emptyList())
+            val lines = results.filter { it.providerId != "huggingface" }
+                .sortedBy { it.providerId }
+                .map { p ->
+                    val keyState = if (runtime.secrets.get("${ProviderRegistry.byId(p.providerId)?.envVarName ?: ""}#1").orEmpty().isNotBlank()) "key" else "no-key"
+                    "${p.providerId}: ${if (p.reachable) "REACHABLE ✓" else p.stateHint} (${keyState})"
+                }
+            onResult(lines.joinToString("\n"))
+        }
+    }
 
     fun addReminder(text: String, delayMs: Long): String =
         proactive.addReminder(text, System.currentTimeMillis() + delayMs)

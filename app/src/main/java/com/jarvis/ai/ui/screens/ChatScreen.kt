@@ -65,6 +65,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -75,6 +76,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -628,6 +630,7 @@ private fun SettingsDialog(
     onDismiss: () -> Unit
 ) {
     var health = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.jarvis.ai.health.HealthReport?>(null) }
+    var savedKeys by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(viewModel.configuredProviders().toSet()) }
     LaunchedEffect(Unit) {
         health.value = runCatching { viewModel.healthSnapshot() }.getOrNull()
     }
@@ -646,6 +649,13 @@ private fun SettingsDialog(
                     "All intelligence routing is handled securely inside the J.A.R.V.I.S. core.",
                     style = MaterialTheme.typography.bodyMedium
                 )
+                ProviderKeySection(
+                    viewModel = viewModel,
+                    savedKeys = savedKeys,
+                    onKeysSaved = { savedKeys = viewModel.configuredProviders().toSet() }
+                )
+
+                Spacer(Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -747,3 +757,99 @@ private fun HealthLine(label: String, value: String) {
         Text(value, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
     }
 }
+
+@Composable
+private fun ProviderKeySection(
+    viewModel: JarvisViewModel,
+    savedKeys: Set<String>,
+    onKeysSaved: () -> Unit
+) {
+    var status by remember { mutableStateOf<String?>(null) }
+    var confirming by remember { mutableStateOf(false) }
+    var typedValues by remember {
+        mutableStateOf(
+            PROVIDER_KEY_FIELDS.associate { it.envName to "" }
+        )
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("PROVIDER KEYS", style = MaterialTheme.typography.labelLarge)
+        Text(
+            "Paste keys below (stored encrypted, AndroidKeyStore — never plaintext).",
+            style = MaterialTheme.typography.labelSmall,
+            color = TextSecondary
+        )
+
+        PROVIDER_KEY_FIELDS.forEach { field ->
+            val isSaved = viewModel.hasKey(field.envName)
+            var revealed by remember { mutableStateOf(false) }
+            OutlinedTextField(
+                value = typedValues[field.envName] ?: "",
+                onValueChange = { typedValues = typedValues + (field.envName to it) },
+                label = { Text(if (isSaved) "${field.label} — saved" else field.label) },
+                placeholder = { Text(field.hint) },
+                singleLine = true,
+                visualTransformation = if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    Row {
+                        if (isSaved) {
+                            Text(
+                                "SAVED",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        TextButton(onClick = { revealed = !revealed }) {
+                            Text(if (revealed) "Hide" else "Show", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        if (status != null) {
+            Text(
+                status!!,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (status!!.contains("✓")) MaterialTheme.colorScheme.primary else Color(0xFFFF6B6B)
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(
+                enabled = !confirming,
+                onClick = {
+                    confirming = true
+                    status = "Testing configured providers…"
+                    viewModel.testAndSaveKeys(typedValues) { result ->
+                        status = result
+                        onKeysSaved()
+                        confirming = false
+                    }
+                }
+            ) { Text(if (confirming) "Testing…" else "Test providers") }
+        }
+        Text(
+            if (savedKeys.isEmpty())
+                "⚠ No keys configured — J.A.R.V.I.S. runs offline only."
+            else "✓ ${savedKeys.size} provider(s) configured: ${savedKeys.joinToString(", ")}",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (savedKeys.isEmpty()) Color(0xFFFF6B6B) else TextSecondary
+        )
+        Spacer(Modifier.height(4.dp))
+    }
+}
+
+private data class FieldSpec(
+    val label: String,
+    val envName: String,
+    val hint: String
+)
+
+private val PROVIDER_KEY_FIELDS = listOf(
+    FieldSpec("Gemini", "GEMINI_API_KEY", "AIza…"),
+    FieldSpec("OpenAI", "OPENAI_API_KEY", "sk-…"),
+    FieldSpec("Groq", "GROQ_API_KEY", "gsk_…"),
+    FieldSpec("OpenRouter", "OPENROUTER_API_KEY", "sk-or-v1-…")
+)

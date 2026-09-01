@@ -75,6 +75,9 @@ class ProviderManager(
         }
     }
 
+    /** Provider IDs that currently have at least one key slot registered. */
+    fun configuredProviderIds(): List<String> = keys.registeredProviders()
+
     /**
      * Best-effort reachability probe across LLM providers (GET /models).
      * Gemini uses a different auth scheme and is probed via its key-param URL.
