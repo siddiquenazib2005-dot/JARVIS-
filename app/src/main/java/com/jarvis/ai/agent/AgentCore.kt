@@ -9,7 +9,11 @@ import com.jarvis.ai.intelligence.TaskRouter
 import com.jarvis.ai.orchestrator.MasterOrchestrator
 import com.jarvis.ai.orchestrator.PackageManagerAppLookup
 import com.jarvis.ai.orchestrator.PackageResolver
+import com.jarvis.ai.data.model.Message
+import com.jarvis.ai.data.model.Sender
+import com.jarvis.ai.provider.LlmRouteRequest
 import com.jarvis.ai.provider.ProviderRouter
+import com.jarvis.ai.provider.RouteChunk
 import com.jarvis.ai.vision.VisionModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.toList
 import kotlin.collections.joinToString
 
@@ -149,18 +153,25 @@ class AgentCore(
                     
                     val startTime = System.currentTimeMillis()
                     
-                    val currentOrchestrator = orchestrator
-                        ?: throw IllegalStateException("Orchestrator not initialized")
-                    
-                    // Use orchestrator for LLM completion
-                    val result = currentOrchestrator.processRequest(
-                        input = cleanCommand,
-                        history = emptyList(),
-                        userConfirmedThisTurn = false
-                    ).toList()
-                    
-                    val rawJson = result.filterIsInstance<com.jarvis.ai.orchestrator.OrchestratorUpdate.Delta>()
-                        .joinToString("") { it.text }
+                    // Fetch the agent's action-JSON directly from the provider layer with
+                    // the SCREEN_OCR/APP_REASONING/MEMORY_CONTEXT system prompt. Calling
+                    // MasterOrchestrator.processRequest() here would run the normal CHAT
+                    // pipeline (JarvisRepository.SYSTEM_PROMPT) instead — the action schema
+                    // was being constructed but never sent to the model, so the result was
+                    // never a parseable JSON action array and every task failed validation.
+                    val rawJson = providerRouter.routeText(
+                        LlmRouteRequest(
+                            capability = com.jarvis.ai.provider.Capability.CHAT,
+                            history = listOf(Message(sender = Sender.USER, text = cleanCommand)),
+                            systemPrompt = fullSystem,
+                            stream = false
+                        )
+                    ).fold("") { acc, chunk ->
+                        when (chunk) {
+                            is RouteChunk.Delta -> acc + chunk.text
+                            is RouteChunk.Finished -> acc
+                        }
+                    }
                     
                     val validation = ActionJsonParser.validate(rawJson)
                     val rawForParsing = if (!validation.isValid && validation.errors.isNotEmpty()) {
@@ -178,15 +189,19 @@ class AgentCore(
                     val actions = ActionJsonParser.parse(rawForParsing)
                         ?: run {
                             // Retry with explicit instruction
-                            val currentOrchestrator = orchestrator
-                                ?: throw IllegalStateException("Orchestrator not initialized")
-                            val retryResult = currentOrchestrator.processRequest(
-                                input = "$cleanCommand\n\nRespond with JSON array ONLY. No other text.",
-                                history = emptyList(),
-                                userConfirmedThisTurn = false
-                            ).toList()
-                            val retryJson = retryResult.filterIsInstance<com.jarvis.ai.orchestrator.OrchestratorUpdate.Delta>()
-                                .joinToString("") { it.text }
+                            val retryJson = providerRouter.routeText(
+                                LlmRouteRequest(
+                                    capability = com.jarvis.ai.provider.Capability.CHAT,
+                                    history = listOf(Message(sender = Sender.USER, text = cleanCommand)),
+                                    systemPrompt = "Respond with a JSON array of actions ONLY. No other text.\n\n$fullSystem",
+                                    stream = false
+                                )
+                            ).fold("") { acc, chunk ->
+                                when (chunk) {
+                                    is RouteChunk.Delta -> acc + chunk.text
+                                    is RouteChunk.Finished -> acc
+                                }
+                            }
                             ActionJsonParser.parse(retryJson)
                         }
                     
@@ -468,21 +483,46 @@ object ActionJsonParser {
     
     fun validate(json: String): ValidationResult {
         val errors = mutableListOf<String>()
-        try {
-            val array = org.json.JSONArray(json)
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                if (!obj.has("action")) {
-                    errors.add("Action at index $i missing 'action' field")
+        // Try the raw payload first, then re-try after extracting the JSON array
+        // from markdown fences / surrounding prose (very common LLM output).
+        for (candidate in listOf(json, extractArray(json)).distinct()) {
+            try {
+                val array = org.json.JSONArray(candidate)
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    if (!obj.has("action")) {
+                        errors.add("Action at index $i missing 'action' field")
+                    }
                 }
+                return ValidationResult(errors.isEmpty(), errors)
+            } catch (e: Exception) {
+                errors.add("Invalid JSON: ${e.message}")
             }
-        } catch (e: Exception) {
-            errors.add("Invalid JSON: ${e.message}")
         }
-        return ValidationResult(errors.isEmpty(), errors)
+        return ValidationResult(false, errors)
     }
     
     fun parse(json: String): List<Action>? {
+        for (candidate in listOf(json, extractArray(json)).distinct()) {
+            val parsed = parseArray(candidate)
+            if (parsed != null) return parsed
+        }
+        return null
+    }
+
+    /**
+     * Extracts the JSON array payload from text that may be wrapped in markdown
+     * fences (```json … ```) or preceded/followed by LLM prose. Falls back to
+     * the raw input when no `[ … ]` span can be isolated.
+     */
+    private fun extractArray(raw: String): String {
+        val trimmed = raw.trim()
+        val start = trimmed.indexOf('[')
+        val end = trimmed.lastIndexOf(']')
+        return if (start >= 0 && end > start) trimmed.substring(start, end + 1) else trimmed
+    }
+
+    private fun parseArray(json: String): List<Action>? {
         return try {
             val array = org.json.JSONArray(json)
             val actions = mutableListOf<Action>()

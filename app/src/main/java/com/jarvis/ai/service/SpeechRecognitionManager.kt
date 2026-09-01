@@ -39,6 +39,10 @@ class SpeechRecognitionManager(private val context: Context) {
         }
         val started = runCatching {
             engine.setRecognitionListener(listener)
+            // Vendor recognition services keep stale error/results state; without a
+            // cancel() the next session can re-deliver the previous onError
+            // (e.g. ERROR_NO_MATCH) instead of listening again.
+            runCatching { engine.cancel() }
             engine.startListening(intent)
             true
         }.getOrDefault(false)

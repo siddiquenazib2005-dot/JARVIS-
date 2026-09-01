@@ -32,7 +32,7 @@ sealed class ActionResult {
     ) : ActionResult() {
         override val success: Boolean get() = false
         override val data: String? get() = null
-        override val error: String? get() = "Action '\$attemptedAction' is not registered"
+        override val error: String? get() = "Action '$attemptedAction' is not registered"
     }
 
     @Serializable
@@ -43,7 +43,7 @@ sealed class ActionResult {
     ) : ActionResult() {
         override val success: Boolean get() = false
         override val data: String? get() = null
-        override val error: String? get() = "Needs user input: \$question"
+        override val error: String? get() = "Needs user input: $question"
     }
 
     @Serializable

@@ -11,7 +11,7 @@ data class Mapping(
 
 class ActionDispatcher(
     private val context: Context,
-    private val executeAction: suspend (String, Map<String, String>, Context) -> ActionResult,
+    private val baseExecutor: suspend (String, Map<String, String>, Context) -> ActionResult,
     private val hasAction: (String) -> Boolean,
     private val autoMapper: ActionAutoMapper
 ) {
@@ -64,7 +64,7 @@ class ActionDispatcher(
 
             // Direct handler execution
             if (hasAction(finalAction)) {
-                return executeAction(finalAction, finalParams, context)
+                return baseExecutor(finalAction, finalParams, context)
             }
         }
 
@@ -72,7 +72,7 @@ class ActionDispatcher(
             // Passthrough - was already valid
             val handler = actionsMap[mapping.mappedAction]
             if (handler != null) {
-                return executeAction(mapping.mappedAction, mapping.mappedParams, context)
+                return baseExecutor(mapping.mappedAction, mapping.mappedParams, context)
             }
         }
 
@@ -89,9 +89,9 @@ class ActionDispatcher(
 
         return when (validationResult) {
             is ValidationResult.Valid -> {
-                val handler = if (hasAction(actionName)) { executeAction } else null
-                handler ?: return null
-                executeAction(actionName, validationResult.enrichedParams.mapValues { it.value.toString() }, context)
+                val executor = if (hasAction(actionName)) { baseExecutor } else null
+                executor ?: return null
+                baseExecutor(actionName, validationResult.enrichedParams.mapValues { it.value.toString() }, context)
             }
             is ValidationResult.MissingParams -> {
                 val definition = ActionSchema.getAction(actionName)
@@ -100,7 +100,7 @@ class ActionDispatcher(
                 }
                 if (allHaveDefaults) {
                     val withDefaults = ActionSchema.applyDefaults(actionName, params)
-                    executeAction(actionName, withDefaults, context)
+                    baseExecutor(actionName, withDefaults, context)
                 } else {
                     val firstMissing = validationResult.missingParams.first()
                     val paramDef = ActionSchema.getAction(actionName)?.params?.find { it.name == firstMissing }
@@ -117,7 +117,7 @@ class ActionDispatcher(
 
     suspend fun executeAction(actionName: String, params: Map<String, String>, context: Context): ActionResult {
         return try {
-            executeAction(actionName, params, context)
+            baseExecutor(actionName, params, context)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

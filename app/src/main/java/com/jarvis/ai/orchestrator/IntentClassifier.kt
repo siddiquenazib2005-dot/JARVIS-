@@ -33,10 +33,10 @@ object IntentClassifier {
 
     private val AUTOMATION_KEYWORDS =
         listOf("tap ", "click ", "type ", "swipe ", "scroll ", "press ", "screenshot", "read screen",
-               "open app", "launch app", "automate", "do ", "perform ", "execute ", "run ",
-               "swipe ", "scroll ", "long press", "long press ", "wait for", "wait for ",
+               "open app", "launch app", "automate",
+               "long press", "wait for",
                "press back", "press home", "press recents", "go back", "go home",
-               "lock screen", "lock phone", "close ", "close app")
+               "lock screen", "lock phone", "close app")
 
     private val VISION_KEYWORDS =
         listOf("what is on my screen", "what's on my screen", "what is on screen", "whats on screen",

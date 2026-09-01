@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.jarvis.ai.core.EventBus
 import com.jarvis.ai.core.EventType
 import com.jarvis.ai.core.JarvisRuntime
+import com.jarvis.ai.core.VoiceSessionGate
 import com.jarvis.ai.data.local.ChatDb
 import com.jarvis.ai.data.model.LatencyInfo
 import com.jarvis.ai.data.model.Message
@@ -102,7 +103,7 @@ class JarvisViewModel(
             _uiState.update {
                 it.copy(
                     messages = restored.ifEmpty { listOf(greetingMessage()) },
-                    backendOnline = runtime.keys.registeredProviders().isNotEmpty(),
+                    backendOnline = runtime.backendOnline(),
                     sessions = sessions,
                     activeSessionId = active.id
                 )
@@ -477,10 +478,15 @@ class JarvisViewModel(
             setNotice("Voice input is not available on this device, sir.")
             return false
         }
-        if (!audioEngine.start()) {
+        if (!runtime.hasRecordAudioPermission()) {
             setNotice("Microphone access was denied, sir. Grant RECORD_AUDIO to proceed.")
             return false
         }
+        // Let SpeechRecognizer own the microphone exclusively: no second
+        // AudioRecord (orb level already pulses via the UI) and the wake-word
+        // loop backs off through VoiceSessionGate. Two competing listeners
+        // make the recognizer hear silence and time out.
+        VoiceSessionGate.active = true
         listening = true
         _uiState.update { it.copy(isListening = true, notice = null) }
         val began = stt.start(
@@ -514,6 +520,7 @@ class JarvisViewModel(
     private fun endListening() {
         if (!listening) return
         listening = false
+        VoiceSessionGate.active = false
         audioEngine.stop()
         _uiState.update { it.copy(isListening = false) }
     }
@@ -609,12 +616,15 @@ class JarvisViewModel(
                 detail.contains("Failed to connect", true) ||
                 detail.contains("timeout", true) ->
                 "I could not reach the network, sir. Please check connectivity and retry."
+            detail.contains("vision:", true) ->
+                "Vision request could not be completed, sir. ${detail.removePrefix("vision:").trim().take(160)}"
             else -> "An unexpected fault occurred, sir. ${detail.take(160)}"
         }
     }
 
     override fun onCleared() {
         generationJob?.cancel()
+        VoiceSessionGate.active = false
         stt.destroy()
         audioEngine.stop()
         tts.shutdown()

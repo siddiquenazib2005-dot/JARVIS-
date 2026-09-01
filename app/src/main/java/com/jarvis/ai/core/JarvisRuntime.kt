@@ -86,6 +86,25 @@ class JarvisRuntime private constructor(context: Context) {
         providerManager = providerManager
     )
 
+    /** True when at least one CHAT-capable provider has a key AND is selectable. */
+    fun backendOnline(): Boolean =
+        com.jarvis.ai.provider.ProviderRegistry
+            .enabledFor(com.jarvis.ai.provider.Capability.CHAT)
+            .any { cfg ->
+                keys.slots(cfg.providerId).isNotEmpty() &&
+                    health.isSelectable(
+                        cfg.providerId,
+                        cfg.enabled,
+                        keys.hasHealthySlot(cfg.providerId, System.currentTimeMillis())
+                    )
+            }
+
+    fun hasRecordAudioPermission(): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            appContext,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
     val vectorMemory: VectorMemoryManager by lazy {
         VectorMemoryManager(
             embedder = com.jarvis.ai.memory.vector.MistralEmbeddingProvider(secrets),

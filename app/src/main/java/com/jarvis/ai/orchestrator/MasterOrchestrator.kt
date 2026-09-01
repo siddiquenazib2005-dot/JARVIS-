@@ -233,6 +233,7 @@ class MasterOrchestrator(
                     "Already in my memory banks, sir."
                 else -> "I could not store that memory, sir."
             }
+            emit(OrchestratorUpdate.Delta(reply))
             emit(
                 OrchestratorUpdate.Completed(
                     success = write?.status == com.jarvis.ai.memory.vector.WriteStatus.STORED,
@@ -241,7 +242,6 @@ class MasterOrchestrator(
                     memoryStored = write?.status == com.jarvis.ai.memory.vector.WriteStatus.STORED
                 )
             )
-            emit(OrchestratorUpdate.Delta(reply))
             write?.status == com.jarvis.ai.memory.vector.WriteStatus.STORED
         }
 

@@ -240,13 +240,18 @@ class ProviderRouter(
         }
 
         // ---- terminal local fallback ----
+        val reason = when {
+            trail.isEmpty() ->
+                "no VISION-capable provider has an API key — add GEMINI_API_KEY or OPENAI_API_KEY in Settings"
+            else -> "no vision-capable provider reachable; attempts: ${trail.joinToString(", ")}"
+        }
         emit(
             VisionRouteChunk.Finished(
                 ExecutionReport(
                     success = false,
                     metadata = metadataOf(Capability.VISION, "", "", startedAt, retries, fallbacks),
                     attempts = trail,
-                    error = "vision: no configured vision-capable provider reachable"
+                    error = "vision: $reason"
                 )
             )
         )

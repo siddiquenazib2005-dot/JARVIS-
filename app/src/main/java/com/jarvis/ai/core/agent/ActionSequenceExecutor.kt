@@ -111,7 +111,7 @@ class ActionSequenceExecutor(
                     ?.takeIf { it.isNotBlank() }
                     ?: "Action execution failed."
                 return ActionResult.Failure(
-                    "Plan stopped at step \${index + 1} (\$actionName): \$detail"
+                    "Plan stopped at step ${index + 1} ($actionName): $detail"
                 )
             }
 
@@ -120,7 +120,7 @@ class ActionSequenceExecutor(
 
         return ActionResult.Success(
             dataMap = mapOf(
-                "message" to "Plan completed successfully (\${orderedSteps.size} steps)."
+                "message" to "Plan completed successfully (${orderedSteps.size} steps)."
             )
         )
     }

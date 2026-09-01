@@ -25,7 +25,7 @@ object IntentClassifier {
 
     private val AUTOMATION_KEYWORDS =
         listOf("tap ", "click ", "type ", "swipe ", "scroll ", "press ", "screenshot", "read screen",
-               "open app", "launch app", "automate", "do ", "perform ", "execute ", "run ")
+               "open app", "launch app", "automate")
 
     private val VISION_KEYWORDS =
         listOf("what is on my screen", "what's on my screen", "what is on screen", "whats on screen",
@@ -172,7 +172,7 @@ object IntentClassifier {
     }
 
     private fun isChatRequest(text: String): Boolean {
-        val isQuestion = QUESTION_WORDS.any { text.startsWith("\$it ") }
+        val isQuestion = QUESTION_WORDS.any { text.startsWith("$it ") }
         return isQuestion && !isCalculationRequest(text) && !isSystemCommand(text) && !isAutomationRequest(text)
     }
 

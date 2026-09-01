@@ -172,7 +172,7 @@ class ToolExecutor(private val context: Context) {
                 recoverable = false
             )
 
-        Log.d(TAG, "executeOpenApp: resolved package '\${packageName}' (raw input: '\${raw}')")
+        Log.d(TAG, "executeOpenApp: resolved package '$packageName' (raw input: '$raw')")
         return withContext(Dispatchers.IO) {
             try {
                 val pm: PackageManager = context.packageManager
@@ -620,7 +620,7 @@ class TaskPlanner {
         }
 
         // Single step
-        val toolName = determineToolForIntent(classification.intent)
+        val toolName = determineToolForIntent(classification.intent, classification.parameters)
         return if (toolName != null) {
             ExecutionPlan(
                 steps = listOf(PlanStep(
@@ -645,7 +645,7 @@ class TaskPlanner {
         val parts = splitMultiStepRequest(normalized)
         val steps = parts.mapIndexed { index, part ->
             val innerClassification = IntentClassifier.classifyIntent(part, emptyMap())
-            val toolName = determineToolForIntent(innerClassification.intent)
+            val toolName = determineToolForIntent(innerClassification.intent, innerClassification.parameters)
             PlanStep(
                 toolName = toolName ?: "unknown",
                 parameters = innerClassification.parameters,
@@ -684,9 +684,18 @@ class TaskPlanner {
     }
 
     /** Determines the tool name for a given intent. */
-    private fun determineToolForIntent(intent: String): String? {
+    private fun determineToolForIntent(
+        intent: String,
+        parameters: Map<String, Any?> = emptyMap()
+    ): String? {
         return when (intent) {
-            "SYSTEM_COMMAND" -> "open_app"
+            "SYSTEM_COMMAND" -> {
+                val command = (parameters["command"] as? String).orEmpty().lowercase()
+                // "open settings"/"go to settings" must reach the open_settings
+                // tool; routing them to open_app tried to resolve "settings" as
+                // an app package and always failed.
+                if (command.contains("settings")) "open_settings" else "open_app"
+            }
             "TIME_DATE" -> "get_device_status" // or a dedicated time tool
             "CALCULATION" -> "calculate"
             "MEMORY" -> "memory" // placeholder

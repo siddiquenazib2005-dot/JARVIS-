@@ -13,6 +13,7 @@ import android.speech.SpeechRecognizer
 import androidx.core.app.NotificationCompat
 import com.jarvis.ai.R
 import com.jarvis.ai.core.JarvisRuntime
+import com.jarvis.ai.core.VoiceSessionGate
 import com.jarvis.ai.orchestrator.OrchestratorUpdate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -90,6 +91,13 @@ class WakeWordService : Service() {
     private fun startWakeWordLoop() {
         if (!running || awaitingCommand) return
 
+        // A chat voice session owns the mic — never start a competing recognizer.
+        // Keep the loop alive (restart cadence) so we resume as soon as it ends.
+        if (VoiceSessionGate.active) {
+            scheduleRestart()
+            return
+        }
+
         val started = speechManager.start(
             onPartial = { partial -> checkForWakePhrase(partial) },
             onFinal = { final ->
@@ -126,6 +134,11 @@ class WakeWordService : Service() {
     // ------------------------------------------------------------------
 
     private fun onWakeWordDetected() {
+        if (VoiceSessionGate.active) {
+            awaitingCommand = false
+            scheduleRestart()
+            return
+        }
         updateNotification("Yes, sir…")
         ttsEngine.speak("Yes, sir.")
         // Small delay so TTS playback doesn't bleed into the mic recording.
@@ -133,6 +146,11 @@ class WakeWordService : Service() {
     }
 
     private fun listenForCommand() {
+        // A chat session grabbed the mic while we waited to listen — stand down.
+        if (VoiceSessionGate.active) {
+            resumeWakeWordLoop()
+            return
+        }
         val started = speechManager.start(
             onPartial = { /* no-op; we only act on the final command */ },
             onFinal = { command ->

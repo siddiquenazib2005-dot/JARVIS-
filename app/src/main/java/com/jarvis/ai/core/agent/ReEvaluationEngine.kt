@@ -3,10 +3,13 @@ package com.jarvis.ai.core.agent
 import android.content.Context
 import com.jarvis.ai.provider.ProviderRouter
 import com.jarvis.ai.provider.LlmRouteRequest
+import com.jarvis.ai.provider.RouteChunk
 import com.jarvis.ai.provider.Capability
 import com.jarvis.ai.data.model.Message
 import com.jarvis.ai.data.model.Sender
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
 
 class ReEvaluationEngine(
@@ -55,6 +58,9 @@ class ReEvaluationEngine(
                 - If the failure makes the whole plan impossible, suggest ABORT
             """.trimIndent()
 
+            // Collect the actual LLM response text; routeText() returns a Flow,
+            // so .toString() would only serialize the flow object itself and the
+            // re-evaluation would silently default to RETRY_SAME forever.
             val responseText = providerRouter.routeText(
                 LlmRouteRequest(
                     capability = Capability.CHAT,
@@ -62,7 +68,10 @@ class ReEvaluationEngine(
                     systemPrompt = "You are an expert re-evaluation engine for autonomous Android automation. Provide concise, actionable re-evaluation in valid JSON only.",
                     stream = false
                 )
-            ).toString()
+            )
+                .filterIsInstance<RouteChunk.Delta>()
+                .toList()
+                .joinToString("") { it.text }
 
             parseReEvaluation(responseText)
         }
