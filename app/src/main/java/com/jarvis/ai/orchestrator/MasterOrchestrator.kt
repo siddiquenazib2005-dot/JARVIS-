@@ -52,7 +52,7 @@ sealed class OrchestratorUpdate {
  */
 class MasterOrchestrator(
     private val providerRouter: ProviderRouter,
-    private val vectorMemory: VectorMemoryManager,
+    internal val vectorMemory: VectorMemoryManager,
     private val appContext: Context,
     /** Null only in JVM tests; device builds always bind a real executor. */
     private val toolExecutor: ToolExecutor? = null,
@@ -97,7 +97,7 @@ class MasterOrchestrator(
 
                 "MEMORY" -> {
                     EventBus.publish(EventType.INTENT_DETECTED, "MEMORY")
-                    memoryStored = handleMemory(classification, input)
+                    memoryStored = handleMemory(classification, input, userConfirmedThisTurn)
                 }
 
                 // SEND_SMS / SEND_WHATSAPP reuse the same single-step tool-execution
@@ -211,7 +211,8 @@ class MasterOrchestrator(
     /** Emits memory-operation replies; returns true when something was stored. */
     private suspend fun kotlinx.coroutines.flow.FlowCollector<OrchestratorUpdate>.handleMemory(
         classification: IntentClassifier.Classification,
-        rawInput: String
+        rawInput: String,
+        userConfirmedThisTurn: Boolean = false
     ): Boolean = when (classification.parameters["operation"] as? String) {
         "store" -> {
             val fact = rawInput.removePrefix("remember").removePrefix("Remember").trim()
