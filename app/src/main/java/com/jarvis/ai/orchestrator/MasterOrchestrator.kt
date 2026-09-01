@@ -261,8 +261,13 @@ class MasterOrchestrator(
         }
 
         else -> {
-            val decision = com.jarvis.ai.security.PermissionGate.decide("memory_wipe_all")
-            emit(OrchestratorUpdate.Confirmation("memory_wipe_all", decision.message))
+            val decision = com.jarvis.ai.security.PermissionGate.decide("memory_wipe_all", userConfirmedThisTurn)
+            if (decision.denied) {
+                emit(OrchestratorUpdate.Confirmation("memory_wipe_all", decision.message))
+            } else {
+                runCatching { vectorMemory.wipeAll() }
+                emit(OrchestratorUpdate.Delta("All memories wiped, sir."))
+            }
             false
         }
     }
@@ -336,10 +341,10 @@ class MasterOrchestrator(
         userConfirmed: Boolean
     ): List<OrchestratorUpdate> = withContext(Dispatchers.IO) {
         val updates = mutableListOf<OrchestratorUpdate>()
-        val done = kotlinx.coroutines.sync.Mutex()
-        
+
         agentCore?.executeTask(rawInput)
-        
+        kotlinx.coroutines.delay(150)
+
         val stateFlow = agentCore?.getStateFlow()
         if (stateFlow != null) {
             var lastState: AgentCore.AgentState? = null
@@ -366,10 +371,10 @@ class MasterOrchestrator(
                 }
             }
         }
-        
+
         if (updates.isEmpty()) {
-            updates += OrchestratorUpdate.Delta("Device automation executed, sir.")
-            updates += completed(true, "agent-core", System.currentTimeMillis())
+            updates += OrchestratorUpdate.Delta("Device automation could not be completed, sir.")
+            updates += completed(false, "agent-core", System.currentTimeMillis())
         }
         return@withContext updates
     }

@@ -209,8 +209,10 @@ class AgentCore(
     }
 
     private suspend fun getMemoryContext(command: String): String {
-        // Get relevant memory from vector memory
-        return ""
+        val vecMem = orchestrator?.vectorMemory ?: return ""
+        return runCatching {
+            vecMem.recall(command).joinToString("\n") { "- ${it.record.content.take(200)}" }
+        }.getOrDefault("")
     }
 
     private suspend fun executeActions(actions: List<Action>) {

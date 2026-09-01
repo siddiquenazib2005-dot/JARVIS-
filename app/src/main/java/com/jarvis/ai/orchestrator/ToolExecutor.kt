@@ -630,7 +630,7 @@ class TaskPlanner {
             "SYSTEM_COMMAND" -> "open_app"
             "TIME_DATE" -> "get_device_status" // or a dedicated time tool
             "CALCULATION" -> "calculate"
-            "MEMORY" -> "memory" // placeholder
+            "MEMORY" -> null
             "SEND_SMS" -> "send_sms"
             "SEND_WHATSAPP" -> "send_whatsapp"
             else -> null

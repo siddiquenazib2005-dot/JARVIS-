@@ -77,7 +77,7 @@ class KeyPoolManager(private val secrets: SecretsSource) {
     }
 
     private fun envBaseRef(providerId: String): String =
-        "#${ProviderRegistry.byId(providerId)?.envVarName.orEmpty()}#1"
+        "${ProviderRegistry.byId(providerId)?.envVarName.orEmpty()}#1"
 
     companion object {
         const val RATE_LIMIT_COOLDOWN_MS = 60_000L

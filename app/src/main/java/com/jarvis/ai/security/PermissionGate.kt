@@ -70,7 +70,7 @@ object PermissionGate {
                 GateDecision(level, false, true, false, "Confirmation needed: $toolName — shall I proceed?")
             }
             PermissionLevel.HIGH_RISK -> if (userConfirmedThisTurn) {
-                GateDecision(level, true, false, false, "user explicitly confirmed high-risk action")
+                GateDecision(level, false, false, false, "user explicitly confirmed high-risk action")
             } else {
                 GateDecision(
                     level, false, true, denied = true,

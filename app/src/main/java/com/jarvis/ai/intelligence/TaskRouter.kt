@@ -1,6 +1,7 @@
 package com.jarvis.ai.intelligence
 
 import android.content.Context
+import android.content.Intent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -65,122 +66,83 @@ class TaskRouter(private val context: Context) {
     }
     
     private fun getAvailableApps(): List<AppEntity> {
-        // Return a list of known apps with their capabilities
-        // In a real implementation, this would query PackageManager
-        return listOf(
-            AppEntity(
-                packageName = "com.android.chrome",
-                appName = "Chrome",
-                category = "BROWSER",
-                capabilities = listOf(Capability.WEB_BROWSE, Capability.SEARCH),
-                trustScore = 0.9f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.google.android.gm",
-                appName = "Gmail",
-                category = "EMAIL",
-                capabilities = listOf(Capability.EMAIL, Capability.MESSAGING),
-                trustScore = 0.9f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.whatsapp",
-                appName = "WhatsApp",
-                category = "COMMUNICATION",
-                capabilities = listOf(Capability.MESSAGING, Capability.CALL),
-                trustScore = 0.85f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.google.android.maps",
-                appName = "Google Maps",
-                category = "UTILITIES",
-                capabilities = listOf(Capability.NAVIGATION, Capability.LOCATION),
-                trustScore = 0.9f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.google.android.youtube",
-                appName = "YouTube",
-                category = "ENTERTAINMENT",
-                capabilities = listOf(Capability.MEDIA_PLAY),
-                trustScore = 0.8f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.spotify.music",
-                appName = "Spotify",
-                category = "ENTERTAINMENT",
-                capabilities = listOf(Capability.MEDIA_PLAY),
-                trustScore = 0.85f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.android.calculator2",
-                appName = "Calculator",
-                category = "UTILITIES",
-                capabilities = listOf(Capability.AI_REASONING),
-                trustScore = 0.7f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.google.android.keep",
-                appName = "Google Keep",
-                category = "NOTES",
-                capabilities = listOf(Capability.NOTE_TAKING, Capability.FILE_WRITE),
-                trustScore = 0.8f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.google.android.calendar",
-                appName = "Google Calendar",
-                category = "CALENDAR",
-                capabilities = listOf(Capability.CALENDAR, Capability.REMINDER),
-                trustScore = 0.85f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.android.camera",
-                appName = "Camera",
-                category = "UTILITIES",
-                capabilities = listOf(Capability.IMAGE_CAPTURE, Capability.CAMERA),
-                trustScore = 0.8f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.google.android.apps.photos",
-                appName = "Google Photos",
-                category = "UTILITIES",
-                capabilities = listOf(Capability.FILE_READ, Capability.IMAGE_CAPTURE),
-                trustScore = 0.75f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.android.settings",
-                appName = "Settings",
-                category = "UTILITIES",
-                capabilities = listOf(Capability.SYSTEM_SETTINGS),
-                trustScore = 0.9f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.google.android.dialer",
-                appName = "Phone",
-                category = "COMMUNICATION",
-                capabilities = listOf(Capability.CALL, Capability.CONTACT),
-                trustScore = 0.85f,
-                isAIApp = false
-            ),
-            AppEntity(
-                packageName = "com.google.android.contacts",
-                appName = "Contacts",
-                category = "COMMUNICATION",
-                capabilities = listOf(Capability.CONTACT),
-                trustScore = 0.8f,
-                isAIApp = false
-            )
+        val pm = context.packageManager
+        val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+        val resolveInfos = pm.queryIntentActivities(intent, 0)
+        
+        val hardcoded = mapOf(
+            "com.android.chrome" to AppEntity("com.android.chrome", "Chrome", "BROWSER", listOf(Capability.WEB_BROWSE, Capability.SEARCH), 0.9f, false),
+            "com.google.android.gm" to AppEntity("com.google.android.gm", "Gmail", "EMAIL", listOf(Capability.EMAIL, Capability.MESSAGING), 0.9f, false),
+            "com.whatsapp" to AppEntity("com.whatsapp", "WhatsApp", "COMMUNICATION", listOf(Capability.MESSAGING, Capability.CALL), 0.85f, false),
+            "com.google.android.apps.messaging" to AppEntity("com.google.android.apps.messaging", "Messages", "COMMUNICATION", listOf(Capability.MESSAGING), 0.85f, false),
+            "com.google.android.maps" to AppEntity("com.google.android.maps", "Google Maps", "UTILITIES", listOf(Capability.NAVIGATION, Capability.LOCATION), 0.9f, false),
+            "com.google.android.youtube" to AppEntity("com.google.android.youtube", "YouTube", "ENTERTAINMENT", listOf(Capability.MEDIA_PLAY), 0.8f, false),
+            "com.spotify.music" to AppEntity("com.spotify.music", "Spotify", "ENTERTAINMENT", listOf(Capability.MEDIA_PLAY), 0.85f, false),
+            "com.android.calculator2" to AppEntity("com.android.calculator2", "Calculator", "UTILITIES", listOf(Capability.AI_REASONING), 0.7f, false),
+            "com.google.android.keep" to AppEntity("com.google.android.keep", "Google Keep", "NOTES", listOf(Capability.NOTE_TAKING, Capability.FILE_WRITE), 0.8f, false),
+            "com.google.android.calendar" to AppEntity("com.google.android.calendar", "Google Calendar", "CALENDAR", listOf(Capability.CALENDAR, Capability.REMINDER), 0.85f, false),
+            "com.android.camera" to AppEntity("com.android.camera", "Camera", "UTILITIES", listOf(Capability.IMAGE_CAPTURE, Capability.CAMERA), 0.8f, false),
+            "com.google.android.apps.photos" to AppEntity("com.google.android.apps.photos", "Google Photos", "UTILITIES", listOf(Capability.FILE_READ, Capability.IMAGE_CAPTURE), 0.75f, false),
+            "com.android.settings" to AppEntity("com.android.settings", "Settings", "UTILITIES", listOf(Capability.SYSTEM_SETTINGS), 0.9f, false),
+            "com.google.android.dialer" to AppEntity("com.google.android.dialer", "Phone", "COMMUNICATION", listOf(Capability.CALL, Capability.CONTACT), 0.85f, false),
+            "com.google.android.contacts" to AppEntity("com.google.android.contacts", "Contacts", "COMMUNICATION", listOf(Capability.CONTACT), 0.8f, false),
+            "org.telegram.messenger" to AppEntity("org.telegram.messenger", "Telegram", "COMMUNICATION", listOf(Capability.MESSAGING), 0.85f, false),
+            "com.instagram.android" to AppEntity("com.instagram.android", "Instagram", "SOCIAL", listOf(Capability.MEDIA_PLAY, Capability.IMAGE_CAPTURE), 0.75f, false),
+            "com.twitter.android" to AppEntity("com.twitter.android", "X", "SOCIAL", listOf(Capability.MESSAGING), 0.7f, false),
+            "com.netflix.mediaclient" to AppEntity("com.netflix.mediaclient", "Netflix", "ENTERTAINMENT", listOf(Capability.MEDIA_PLAY), 0.8f, false),
+            "com.google.android.apps.docs" to AppEntity("com.google.android.apps.docs", "Google Docs", "PRODUCTIVITY", listOf(Capability.FILE_READ, Capability.FILE_WRITE), 0.85f, false),
         )
+
+        val discovered = mutableListOf<AppEntity>()
+        for (ri in resolveInfos) {
+            val pkg = ri.activityInfo.packageName
+            val label = runCatching { ri.loadLabel(pm).toString() }.getOrDefault(pkg)
+            val known = hardcoded[pkg]
+            if (known != null) {
+                discovered.add(known)
+            } else {
+                val category = guessCategory(pkg)
+                val caps = guessCapabilities(pkg)
+                discovered.add(AppEntity(pkg, label, category, caps, 0.5f, false))
+            }
+        }
+        return discovered
+    }
+
+    private fun guessCategory(pkg: String): String = when {
+        pkg.contains("chrome") || pkg.contains("browser") || pkg.contains("firefox") -> "BROWSER"
+        pkg.contains("mail") || pkg.contains("gmail") -> "EMAIL"
+        pkg.contains("whatsapp") || pkg.contains("telegram") || pkg.contains("signal") || pkg.contains("messenger") -> "COMMUNICATION"
+        pkg.contains("maps") || pkg.contains("navigation") -> "UTILITIES"
+        pkg.contains("youtube") || pkg.contains("netflix") || pkg.contains("spotify") || pkg.contains("music") -> "ENTERTAINMENT"
+        pkg.contains("camera") || pkg.contains("photo") -> "UTILITIES"
+        pkg.contains("calendar") || pkg.contains("schedule") -> "CALENDAR"
+        pkg.contains("note") || pkg.contains("keep") -> "NOTES"
+        pkg.contains("docs") || pkg.contains("drive") || pkg.contains("sheets") -> "PRODUCTIVITY"
+        pkg.contains("settings") -> "UTILITIES"
+        pkg.contains("dialer") || pkg.contains("phone") || pkg.contains("contacts") -> "COMMUNICATION"
+        pkg.contains("instagram") || pkg.contains("twitter") || pkg.contains("facebook") || pkg.contains("tiktok") -> "SOCIAL"
+        else -> "OTHER"
+    }
+
+    private fun guessCapabilities(pkg: String): List<Capability> {
+        val caps = mutableListOf<Capability>()
+        if (pkg.contains("chrome") || pkg.contains("browser") || pkg.contains("firefox")) caps.addAll(listOf(Capability.WEB_BROWSE, Capability.SEARCH))
+        if (pkg.contains("mail") || pkg.contains("gmail")) caps.addAll(listOf(Capability.EMAIL, Capability.MESSAGING))
+        if (pkg.contains("whatsapp") || pkg.contains("telegram") || pkg.contains("signal") || pkg.contains("messenger")) caps.addAll(listOf(Capability.MESSAGING, Capability.CALL))
+        if (pkg.contains("maps")) caps.addAll(listOf(Capability.NAVIGATION, Capability.LOCATION))
+        if (pkg.contains("youtube") || pkg.contains("netflix") || pkg.contains("spotify") || pkg.contains("music")) caps.add(Capability.MEDIA_PLAY)
+        if (pkg.contains("camera")) caps.addAll(listOf(Capability.IMAGE_CAPTURE, Capability.CAMERA))
+        if (pkg.contains("photo")) caps.addAll(listOf(Capability.FILE_READ, Capability.IMAGE_CAPTURE))
+        if (pkg.contains("calendar") || pkg.contains("schedule")) caps.addAll(listOf(Capability.CALENDAR, Capability.REMINDER))
+        if (pkg.contains("note") || pkg.contains("keep")) caps.addAll(listOf(Capability.NOTE_TAKING, Capability.FILE_WRITE))
+        if (pkg.contains("docs") || pkg.contains("drive")) caps.addAll(listOf(Capability.FILE_READ, Capability.FILE_WRITE))
+        if (pkg.contains("settings")) caps.add(Capability.SYSTEM_SETTINGS)
+        if (pkg.contains("dialer") || pkg.contains("phone")) caps.addAll(listOf(Capability.CALL, Capability.CONTACT))
+        if (pkg.contains("contacts")) caps.add(Capability.CONTACT)
+        if (pkg.contains("calculator")) caps.add(Capability.AI_REASONING)
+        if (caps.isEmpty()) caps.add(Capability.AI_REASONING)
+        return caps
     }
     
     private fun detectNeededCapabilities(command: String): List<Capability> {

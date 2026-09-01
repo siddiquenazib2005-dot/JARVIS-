@@ -94,6 +94,72 @@ object ToolRegistry {
             riskLevel = RiskLevel.LOW,
             confirmationRequired = false,
             confirmationMessage = null
+        ),
+        "send_sms" to ToolDefinition(
+            name = "send_sms",
+            description = "Send an SMS message to a phone number",
+            category = "messaging",
+            parameters = mapOf(
+                "contact" to "Contact name or phone number",
+                "message" to "The message to send"
+            ),
+            permission = "android.permission.SEND_SMS",
+            riskLevel = RiskLevel.MEDIUM,
+            confirmationRequired = true,
+            confirmationMessage = "Do you want to send this SMS?"
+        ),
+        "send_whatsapp" to ToolDefinition(
+            name = "send_whatsapp",
+            description = "Send a WhatsApp message to a contact",
+            category = "messaging",
+            parameters = mapOf(
+                "contact" to "Contact name or phone number",
+                "message" to "The message to send"
+            ),
+            permission = null,
+            riskLevel = RiskLevel.MEDIUM,
+            confirmationRequired = true,
+            confirmationMessage = "Do you want to send this WhatsApp message?"
+        ),
+        "memory_read" to ToolDefinition(
+            name = "memory_read",
+            description = "Read stored memories",
+            category = "memory",
+            parameters = mapOf("query" to "What to search for in memory"),
+            permission = null,
+            riskLevel = RiskLevel.LOW,
+            confirmationRequired = false,
+            confirmationMessage = null
+        ),
+        "memory_write" to ToolDefinition(
+            name = "memory_write",
+            description = "Store a new memory",
+            category = "memory",
+            parameters = mapOf("content" to "The content to remember"),
+            permission = null,
+            riskLevel = RiskLevel.LOW,
+            confirmationRequired = false,
+            confirmationMessage = null
+        ),
+        "memory_delete" to ToolDefinition(
+            name = "memory_delete",
+            description = "Delete a specific memory",
+            category = "memory",
+            parameters = mapOf("memoryId" to "ID of the memory to delete"),
+            permission = null,
+            riskLevel = RiskLevel.MEDIUM,
+            confirmationRequired = true,
+            confirmationMessage = "Do you want to delete this memory?"
+        ),
+        "memory_wipe_all" to ToolDefinition(
+            name = "memory_wipe_all",
+            description = "Wipe all stored memories",
+            category = "memory",
+            parameters = mapOf(),
+            permission = null,
+            riskLevel = RiskLevel.HIGH,
+            confirmationRequired = true,
+            confirmationMessage = "This will permanently erase ALL memories. Are you sure?"
         )
     )
 
