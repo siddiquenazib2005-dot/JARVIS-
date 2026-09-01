@@ -105,6 +105,7 @@ class ToolExecutor(private val context: Context) {
                 "calculate" -> executeCalculate(parameters)
                 "send_sms" -> executeSendSms(parameters)
                 "send_whatsapp" -> executeSendWhatsapp(parameters)
+                "call_contact" -> executeCallContact(parameters)
                 else -> ToolResult.Failure(
                     toolName = toolName,
                     error = "Unknown tool: $toolName",
@@ -130,6 +131,10 @@ class ToolExecutor(private val context: Context) {
                     (parameters["contact"] as? String)?.isNotBlank() == true
                 val hasMessage = (parameters["message"] as? String)?.isNotBlank() == true
                 hasRecipient && hasMessage
+            }
+            "call_contact" -> {
+                (parameters["phoneNumber"] as? String)?.isNotBlank() == true ||
+                    (parameters["contact"] as? String)?.isNotBlank() == true
             }
             else -> false
         }
@@ -504,6 +509,60 @@ class ToolExecutor(private val context: Context) {
             )
         }
     }
+
+    /**
+     * Executes the call_contact tool via ACTION_CALL — places the call
+     * directly (no dialer tap needed). Requires android.permission.CALL_PHONE
+     * (dangerous permission, runtime-granted) on top of the PermissionGate
+     * confirmation that already gates this tool by default (unmapped tool ->
+     * CONFIRM_REQUIRED), so a call never goes out without an explicit
+     * "yes" for the current turn.
+     */
+    private suspend fun executeCallContact(parameters: Map<String, Any?>): ToolResult {
+        val rawNumber = resolveRecipientNumber(parameters)
+            ?: return ToolResult.Failure(
+                toolName = "call_contact",
+                error = "Could not resolve a phone number for the recipient",
+                recoverable = false
+            )
+        val digitsOnly = rawNumber.filter { it.isDigit() || it == '+' }
+        if (digitsOnly.length < 8) {
+            return ToolResult.Failure(
+                toolName = "call_contact",
+                error = "Resolved phone number looks invalid: $rawNumber",
+                recoverable = false
+            )
+        }
+
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            return ToolResult.Failure(
+                toolName = "call_contact",
+                error = "CALL_PHONE permission not granted. Enable it in Settings → Apps → JARVIS → Permissions.",
+                recoverable = false
+            )
+        }
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$digitsOnly"))
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+                ToolResult.Success(
+                    toolName = "call_contact",
+                    data = mapOf("to" to digitsOnly),
+                    message = "Calling $digitsOnly now, sir."
+                )
+            } catch (e: Exception) {
+                ToolResult.Failure(
+                    toolName = "call_contact",
+                    error = "Failed to place call: ${e.message}",
+                    recoverable = true
+                )
+            }
+        }
+    }
 }
 
 /** Result verifier for tool execution outcomes. */
@@ -630,9 +689,10 @@ class TaskPlanner {
             "SYSTEM_COMMAND" -> "open_app"
             "TIME_DATE" -> "get_device_status" // or a dedicated time tool
             "CALCULATION" -> "calculate"
-            "MEMORY" -> null
+            "MEMORY" -> "memory" // placeholder
             "SEND_SMS" -> "send_sms"
             "SEND_WHATSAPP" -> "send_whatsapp"
+            "MAKE_CALL" -> "call_contact"
             else -> null
         }
     }

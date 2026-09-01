@@ -63,6 +63,15 @@ object IntentClassifier {
     /** Hinglish: "NAZIB ko whatsapp karo hii" / "ritik ko sms bhejo call me" */
     private val MSG_PATTERN_KO = Regex("""^(\S+)\s+ko\s+(sms|whatsapp)\s+(?:karo\s+|bhejo\s+|bolo\s+)?(.+)$""")
 
+    // ------------------------------------------------------------------
+    // Phone calls
+    // ------------------------------------------------------------------
+
+    private val CALL_TRIGGER_WORDS = listOf("call ", "phone ", "ring ", "dial ")
+    private val CALL_PATTERN_DIRECT = Regex("""^(?:call|phone|ring|dial)\s+(.+)$""")
+    /** Hinglish: "NAZIB ko call karo" / "ritik ko phone lagao" */
+    private val CALL_PATTERN_KO = Regex("""^(.+?)\s+ko\s+(?:call|phone)\s+(?:karo|lagao|milao)?$""")
+
     /** Classifies a user request intent. */
     fun classifyIntent(request: String, context: Map<String, Any?> = emptyMap()): Classification {
         val normalized = request.trim().lowercase()
@@ -103,6 +112,19 @@ object IntentClassifier {
             }
             // Keyword matched but couldn't parse contact/message — let AI chat handle
             // it as a clarifying conversation rather than silently failing here.
+        }
+
+        if (isCallRequest(normalized)) {
+            val contact = parseCallRequest(normalized)
+            if (contact != null) {
+                return Classification(
+                    intent = "MAKE_CALL",
+                    confidence = 0.9f,
+                    parameters = mapOf("contact" to contact),
+                    requiresAi = false,
+                    needsConfirmation = true
+                )
+            }
         }
 
         // Check automation FIRST - more specific than generic system commands
@@ -191,10 +213,10 @@ object IntentClassifier {
         .replace("go to ", "")
         .trim()
 
-private fun extractAutomationCommand(text: String): String = text
-    
+    private fun extractAutomationCommand(text: String): String = text
+
     private fun isVisionRequest(text: String): Boolean = containsAny(text, VISION_KEYWORDS)
-    
+
     private fun isMemoryOperation(text: String): Boolean = containsAny(text, MEMORY_KEYWORDS)
 
     private fun extractMemoryOperation(text: String): String = when {
@@ -211,6 +233,19 @@ private fun extractAutomationCommand(text: String): String = text
 
     private fun isMessagingRequest(text: String): Boolean =
         containsAny(text, MESSAGING_TRIGGER_WORDS) && (text.contains(" to ") || text.contains(" ko "))
+
+    private fun isCallRequest(text: String): Boolean = containsAny(text, CALL_TRIGGER_WORDS)
+
+    /** Extracts the contact name/number from a call command; null if the phrasing doesn't match. */
+    private fun parseCallRequest(text: String): String? {
+        CALL_PATTERN_DIRECT.find(text)?.let { m ->
+            return m.groupValues[1].trim().removePrefix("to ").trim()
+        }
+        CALL_PATTERN_KO.find(text)?.let { m ->
+            return m.groupValues[1].trim()
+        }
+        return null
+    }
 
     /**
      * Extracts (type, contact, message) from a normalized messaging command.

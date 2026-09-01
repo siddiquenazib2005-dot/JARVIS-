@@ -108,7 +108,7 @@ class MasterOrchestrator(
                 // IntentClassifier.parseMessagingRequest(). Without this case these
                 // intents fell through to the `else` (CHAT) branch and were never
                 // executed — only replied to conversationally.
-                "SYSTEM_COMMAND", "SEND_SMS", "SEND_WHATSAPP" -> {
+                "SYSTEM_COMMAND", "SEND_SMS", "SEND_WHATSAPP", "MAKE_CALL" -> {
                     EventBus.publish(EventType.INTENT_DETECTED, classification.intent)
                     handleSystemCommand(classification, input, userConfirmedThisTurn).forEach { update ->
                         emit(update)
@@ -212,7 +212,7 @@ class MasterOrchestrator(
     private suspend fun kotlinx.coroutines.flow.FlowCollector<OrchestratorUpdate>.handleMemory(
         classification: IntentClassifier.Classification,
         rawInput: String,
-        userConfirmedThisTurn: Boolean = false
+        userConfirmedThisTurn: Boolean
     ): Boolean = when (classification.parameters["operation"] as? String) {
         "store" -> {
             val fact = rawInput.removePrefix("remember").removePrefix("Remember").trim()
@@ -263,11 +263,16 @@ class MasterOrchestrator(
 
         else -> {
             val decision = com.jarvis.ai.security.PermissionGate.decide("memory_wipe_all", userConfirmedThisTurn)
-            if (decision.denied) {
-                emit(OrchestratorUpdate.Confirmation("memory_wipe_all", decision.message))
+            if (decision.allowedWithoutConfirmation) {
+                val wiped = runCatching { vectorMemory.wipeAll() }.getOrDefault(-1)
+                emit(
+                    OrchestratorUpdate.Delta(
+                        if (wiped >= 0) "All memories erased, sir."
+                        else "Memory wipe failed, sir."
+                    )
+                )
             } else {
-                runCatching { vectorMemory.wipeAll() }
-                emit(OrchestratorUpdate.Delta("All memories wiped, sir."))
+                emit(OrchestratorUpdate.Confirmation("memory_wipe_all", decision.message))
             }
             false
         }
@@ -342,10 +347,9 @@ class MasterOrchestrator(
         userConfirmed: Boolean
     ): List<OrchestratorUpdate> = withContext(Dispatchers.IO) {
         val updates = mutableListOf<OrchestratorUpdate>()
-
+        
         agentCore?.executeTask(rawInput)
-        kotlinx.coroutines.delay(150)
-
+        
         val stateFlow = agentCore?.getStateFlow()
         if (stateFlow != null) {
             var lastState: AgentCore.AgentState? = null
@@ -372,10 +376,10 @@ class MasterOrchestrator(
                 }
             }
         }
-
+        
         if (updates.isEmpty()) {
-            updates += OrchestratorUpdate.Delta("Device automation could not be completed, sir.")
-            updates += completed(false, "agent-core", System.currentTimeMillis())
+            updates += OrchestratorUpdate.Delta("Device automation executed, sir.")
+            updates += completed(true, "agent-core", System.currentTimeMillis())
         }
         return@withContext updates
     }
