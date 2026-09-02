@@ -1,23 +1,28 @@
 package com.jarvis.ai.orchestrator
 
 import android.content.Context
+import android.util.Log
 import com.jarvis.ai.agent.AgentCore
-import com.jarvis.ai.agent.Action
-import com.jarvis.ai.agent.ActionJsonParser
-import com.jarvis.ai.agent.TaskWorkingMemory
 import com.jarvis.ai.core.EventBus
 import com.jarvis.ai.core.EventType
 import com.jarvis.ai.data.model.Message
 import com.jarvis.ai.data.model.Sender
 import com.jarvis.ai.data.repository.JarvisRepository
-import com.jarvis.ai.data.repository.OfflineJarvisEngine
-import com.jarvis.ai.intelligence.TaskRouter
+import com.jarvis.ai.memory.vector.MemoryType
 import com.jarvis.ai.memory.vector.VectorMemoryManager
+import com.jarvis.ai.memory.vector.WriteStatus
 import com.jarvis.ai.planning.AgentLimits
 import com.jarvis.ai.planning.AgentLoop
 import com.jarvis.ai.planning.StepOutcome
+import com.jarvis.ai.provider.Capability
+import com.jarvis.ai.provider.RouteChunk
 import com.jarvis.ai.provider.LlmRouteRequest
 import com.jarvis.ai.provider.ProviderRouter
+import com.jarvis.ai.security.AuditLog
+import com.jarvis.ai.security.PermissionGate
+import com.jarvis.ai.system.SystemAwareness
+import com.jarvis.ai.vision.ScreenshotCapture
+import com.jarvis.ai.vision.VisionModule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -68,7 +73,9 @@ class MasterOrchestrator(
 ) {
 
     private val agentLoop = AgentLoop(AgentLimits())
-    private var lastActionOutput: String = ""
+
+    /** Fast-path launcher for explicit "open <app>" system-control commands. */
+    private val systemToolHandler = SystemToolHandler(appContext)
 
     /** Secrets seam for the vision layer (backend-only credentials). */
     internal lateinit var visionSecrets: com.jarvis.ai.provider.SecretsSource
@@ -83,17 +90,39 @@ class MasterOrchestrator(
         var memoryStored = false
 
         try {
+            // Fully-online policy: JARVIS ONLY answers through the remote uplink.
+            // If the device is offline there is no local fallback engine — the
+            // single, explicit availability message is surfaced instead.
+            val online = com.jarvis.ai.system.SystemAwareness(appContext).snapshot().online
+            if (online == false) {
+                emit(OrchestratorUpdate.Delta(NOT_AVAILABLE_MESSAGE))
+                emit(completed(false, "offline", startedAt))
+                return@flow
+            }
+
+            // Fast-path system control: explicit "open <app>" commands launch
+            // instantly without an LLM round-trip or tool-classification.
+            systemToolHandler.handle(input)?.let { launch ->
+                if (launch.success) {
+                    // Parity with the gated tool pipeline: app-launch is LOW_RISK
+                    // (no confirmation) but must still be recorded in the audit log.
+                    com.jarvis.ai.security.AuditLog.record(
+                        "open_app",
+                        com.jarvis.ai.security.PermissionGate.decide("open_app", userConfirmedThisTurn),
+                        input
+                    )
+                    EventBus.publish(EventType.DEVICE_ACTION, "open_app")
+                }
+                emit(OrchestratorUpdate.Delta(launch.reply))
+                emit(completed(launch.success, if (launch.success) "fast-path" else "system", startedAt))
+                return@flow
+            }
+
             val classification = IntentClassifier.classifyIntent(input)
 
             when (classification.intent) {
-                "CALCULATION", "TIME_DATE" -> {
-                    val reply = OfflineJarvisEngine.respond(
-                        (classification.parameters["expression"] as? String) ?: input
-                    )
-                    EventBus.publish(EventType.INTENT_DETECTED, classification.intent)
-                    emit(OrchestratorUpdate.Delta(reply))
-                    emit(completed(true, "local", startedAt))
-                }
+                // CALCULATION / TIME_DATE intentionally have NO local offline path:
+                // under fully-online policy every answer comes from the remote uplink.
 
                 "MEMORY" -> {
                     EventBus.publish(EventType.INTENT_DETECTED, "MEMORY")
@@ -157,7 +186,14 @@ class MasterOrchestrator(
                             append(memoryContext)
                         }
                     }
-                    val trimmedHistory = history.takeLast(MAX_HISTORY_MESSAGES)
+                    // The ViewModel feeds history WITHOUT the current input (it passes
+                    // history.dropLast(1)) and providers/OfflineProvider derive the active
+                    // user prompt from history.lastUserText(). Append the current input as
+                    // the trailing USER message so typed text is actually seen — otherwise
+                    // every message reaches the offline/degraded fallback as empty input
+                    // and is answered with "I did not quite catch that, sir."
+                    val withCurrentInput = history + Message(sender = Sender.USER, text = input)
+                    val trimmedHistory = withCurrentInput.takeLast(MAX_HISTORY_MESSAGES)
 
                     providerRouter
                         .routeText(
@@ -438,29 +474,12 @@ class MasterOrchestrator(
 
     companion object {
         private const val MAX_HISTORY_MESSAGES = 16
-    }
-}
 
-/** Cooperative cancellation signal shared with the agent loop. */
-class CancellationToken {
-    internal var _cancelled = false
-    private val lock = Any()
+        /** Timeout guarding automation state-collection so a stuck agent is never awaited forever. */
+        private const val AUTOMATION_TIMEOUT_MS = 15_000L
 
-    var isCancelled: Boolean
-        get() = synchronized(lock) { _cancelled }
-        set(value) = synchronized(lock) { _cancelled = value }
-
-    fun cancel() {
-        synchronized(lock) { _cancelled = true }
-    }
-
-    fun reset() {
-        synchronized(lock) { _cancelled = false }
-    }
-
-    fun checkCancellation() {
-        if (isCancelled) {
-            throw java.lang.InterruptedException("Operation cancelled by user")
-        }
+        /** Surfaced whenever the remote uplink cannot be reached (fully-online policy). */
+        const val NOT_AVAILABLE_MESSAGE =
+            "Sorry, JARVIS isn't available at the moment. Please check your Internet connection and try again."
     }
 }

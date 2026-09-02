@@ -5,11 +5,6 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -71,6 +66,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -87,12 +83,13 @@ import com.jarvis.ai.data.model.SessionInfo
 import com.jarvis.ai.data.model.Sender
 import com.jarvis.ai.ui.components.ChatInputBar
 import com.jarvis.ai.ui.components.GlowBackground
-import com.jarvis.ai.ui.components.JarvisOrb
 import com.jarvis.ai.ui.components.MessageBubble
 import com.jarvis.ai.ui.components.TelemetryRow
+import com.jarvis.ai.ui.theme.ElectricBlue
 import com.jarvis.ai.ui.theme.PanelBlue
 import com.jarvis.ai.ui.theme.TextPrimary
 import com.jarvis.ai.ui.theme.TextSecondary
+import com.jarvis.ai.ui.theme.VioletPulse
 import com.jarvis.ai.viewmodel.JarvisViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -141,6 +138,7 @@ fun ChatScreen(
     }
 
     fun beginVoiceInput() {
+        viewModel.recordMicPress()
         val permission = Manifest.permission.RECORD_AUDIO
         if (ContextCompat.checkSelfPermission(context, permission) ==
             PackageManager.PERMISSION_GRANTED
@@ -349,20 +347,12 @@ private fun Header(
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    val pulse by rememberInfiniteTransition(label = "status").animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-        label = "pulse"
-    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        JarvisOrb(size = 34.dp, active = isBusy || isSpeaking, level = orbLevel)
-        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 "J.A.R.V.I.S.",
@@ -371,26 +361,27 @@ private fun Header(
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(top = 2.dp)
             ) {
                 Box(
                     Modifier
-                        .size(8.dp)
+                        .size(7.dp)
                         .background(
                             when {
                                 !backendOnline -> Color(0xFFFFB74D)
-                                isSpeaking -> Color(0xFF69F0AE)
-                                else -> MaterialTheme.colorScheme.primary.copy(alpha = pulse)
+                                isSpeaking -> Color(0xFF4CD964)
+                                else -> Color(0xFF5B7CFF)
                             },
                             CircleShape
                         )
                 )
                 Text(
                     when {
-                        !backendOnline -> "OFFLINE RESERVES"
-                        isSpeaking -> "SPEAKING"
-                        isBusy -> "PROCESSING"
-                        else -> activeProvider.ifBlank { "AUTO-ROUTE • MULTI-PROVIDER" }
+                        !backendOnline -> "Offline reserves"
+                        isSpeaking -> "Speaking"
+                        isBusy -> "Processing"
+                        else -> activeProvider.ifBlank { "Online • multi-provider" }
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -584,11 +575,26 @@ private fun WelcomeHero(onSuggestion: (String) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 28.dp),
+            .padding(vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        JarvisOrb(size = 96.dp)
-        Spacer(Modifier.height(18.dp))
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .background(
+                    Brush.linearGradient(listOf(ElectricBlue, VioletPulse)),
+                    CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "J",
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(Modifier.height(16.dp))
         Text(
             "How may I assist you today?",
             style = MaterialTheme.typography.headlineMedium,
@@ -598,13 +604,13 @@ private fun WelcomeHero(onSuggestion: (String) -> Unit) {
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Streaming intelligence core • voice uplink ready • offline fallback engaged",
+            "Online multi-provider intelligence • voice uplink ready",
             style = MaterialTheme.typography.labelMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 24.dp)
         )
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(24.dp))
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -783,9 +789,13 @@ private fun ProviderKeySection(
         PROVIDER_KEY_FIELDS.forEach { field ->
             val isSaved = viewModel.hasKey(field.envName)
             var revealed by remember { mutableStateOf(false) }
+            var fieldStatus by remember { mutableStateOf<String?>(null) }
             OutlinedTextField(
                 value = typedValues[field.envName] ?: "",
-                onValueChange = { typedValues = typedValues + (field.envName to it) },
+                onValueChange = {
+                    typedValues = typedValues + (field.envName to it)
+                    fieldStatus = null
+                },
                 label = { Text(if (isSaved) "${field.label} — saved" else field.label) },
                 placeholder = { Text(field.hint) },
                 singleLine = true,
@@ -806,6 +816,23 @@ private fun ProviderKeySection(
                 },
                 modifier = Modifier.fillMaxWidth()
             )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    enabled = (typedValues[field.envName]?.isNotBlank() == true),
+                    onClick = {
+                        fieldStatus = viewModel.saveKeyForField(field.envName, typedValues[field.envName] ?: "")
+                        typedValues = typedValues + (field.envName to "")
+                        onKeysSaved()
+                    }
+                ) { Text("Save ${field.label} key") }
+                if (fieldStatus != null) {
+                    Text(
+                        fieldStatus!!,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (fieldStatus!!.contains("✓")) MaterialTheme.colorScheme.primary else Color(0xFFFF6B6B)
+                    )
+                }
+            }
         }
 
         if (status != null) {
@@ -848,7 +875,7 @@ private data class FieldSpec(
 )
 
 private val PROVIDER_KEY_FIELDS = listOf(
-    FieldSpec("Gemini", "GEMINI_API_KEY", "AIza…"),
+    FieldSpec("Gemini", "GEMINI_API_KEY", "AQ… / AIza…"),
     FieldSpec("OpenAI", "OPENAI_API_KEY", "sk-…"),
     FieldSpec("Groq", "GROQ_API_KEY", "gsk_…"),
     FieldSpec("OpenRouter", "OPENROUTER_API_KEY", "sk-or-v1-…")

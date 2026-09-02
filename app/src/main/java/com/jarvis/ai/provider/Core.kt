@@ -125,7 +125,6 @@ object SecretRedactor {
         Regex("gsk_[A-Za-z0-9]+"),
         Regex("csk-[A-Za-z0-9]+"),
         Regex("tvly-[A-Za-z0-9\\-]+"),
-        Regex("AQ\\.[A-Za-z0-9_\\-]+"),
         Regex("pcsk_[A-Za-z0-9_\\-]+"),
         // JWTs (Qdrant cluster keys etc.) — three base64url segments.
         Regex("eyJ[A-Za-z0-9_\\-]+\\.eyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+"),

@@ -10,8 +10,8 @@ package com.jarvis.ai.service
  * whatever incomplete text remains.
  *
  * Sentence boundary rules:
- *   - . ! ? followed by whitespace + capital letter OR end-of-text are
- *     treated as sentence terminators.
+ *   - . ! ? followed by whitespace (incl. NBSP) or end-of-text are treated
+ *     as sentence terminators.
  *   - A . preceded by a digit is treated as a decimal point, NOT a
  *     sentence boundary (e.g. "3.14", "0.5").
  *   - A . ! ? that forms part of a known English abbreviation is ignored
@@ -56,7 +56,7 @@ class SentenceParser {
         return nextSentence()
     }
 
-    /** Return true if a boundary was found and consumed. */
+    /** Return the index of the first sentence boundary, or -1 if none. */
     private fun findFirstBoundary(text: String): Int {
         var i = 0
         while (i < text.length) {
@@ -76,9 +76,14 @@ class SentenceParser {
                     continue
                 }
 
-                // Sentence boundary: followed by whitespace or end-of-text
+                // Sentence boundary: end-of-text, OR whitespace (incl. NBSP U+00A0,
+                // which Char.isWhitespace() does not report). We intentionally do NOT
+                // require a following capital letter: LLM streaming output frequently
+                // continues in lowercase after a period ("is ready. ask me anything."),
+                // and requiring a capital would delay incremental TTS/streaming until
+                // the very end of the stream.
                 val after = if (i + 1 < text.length) text[i + 1] else Char.MIN_VALUE
-                if (after.isWhitespace() || after == Char.MIN_VALUE) {
+                if (after == Char.MIN_VALUE || after.isWhitespace() || after == '\u00a0') {
                     return i
                 }
             }
@@ -104,5 +109,11 @@ class SentenceParser {
         val remaining = buffer
         buffer = ""
         return remaining
+    }
+
+    /** Drop any partially-buffered text (called when a generation is cancelled so a
+     *  half-sentence from a cancelled reply does not leak into the next request). */
+    fun clear() {
+        buffer = ""
     }
 }

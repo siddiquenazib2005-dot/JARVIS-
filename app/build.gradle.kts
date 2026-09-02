@@ -84,6 +84,13 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
 
+    // Google Gemini SDK (vision / text generation via core.router)
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
+
+    // Kotlin Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+
     // Open-Jarvis integrations
     implementation(libs.androidx.security.crypto)
     implementation(libs.mlkit.text.recognition)

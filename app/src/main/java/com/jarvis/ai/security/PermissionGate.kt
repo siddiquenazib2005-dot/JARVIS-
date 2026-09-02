@@ -70,7 +70,11 @@ object PermissionGate {
                 GateDecision(level, false, true, false, "Confirmation needed: $toolName — shall I proceed?")
             }
             PermissionLevel.HIGH_RISK -> if (userConfirmedThisTurn) {
-                GateDecision(level, false, false, false, "user explicitly confirmed high-risk action")
+                // User explicitly confirmed in this turn → may execute NOW.
+                // (Previously allowedWithoutConfirmation stayed false here, so callers
+                // that gate on it never reached the destructive action even after the
+                // user repeatedly confirmed — "forget all my memories" never ran.)
+                GateDecision(level, true, false, false, "user explicitly confirmed high-risk action")
             } else {
                 GateDecision(
                     level, false, true, denied = true,

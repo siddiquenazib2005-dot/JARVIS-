@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
 /** Live reachability report for one provider. */
@@ -95,16 +96,83 @@ class ProviderManager(
 
     private suspend fun probe(cfg: ProviderConfig): ProviderStatus {
         val t0 = System.currentTimeMillis()
-        val key = secrets.get("${cfg.envVarName}#1")
+        val key = secrets.get("${cfg.envVarName}#1")?.trim()
         if (key.isNullOrBlank()) {
             return ProviderStatus(cfg.providerId, false, HealthState.DISABLED, null, "no key configured")
         }
-        val url = when (cfg.providerId) {
-            "gemini" -> "${cfg.baseUrl}/models?key=$key"
-            else -> "${cfg.baseUrl.trimEnd('/')}/models"
+        return try {
+            if (cfg.providerId == "gemini") {
+                probeGemini(cfg, key, t0)
+            } else {
+                probeOpenAICompat(cfg, key, t0)
+            }
+        } catch (e: IOException) {
+            ProviderStatus(
+                cfg.providerId, false,
+                FailureClassifier.classify(e.message).let {
+                    if (it == FailureCategory.NETWORK) HealthState.NETWORK_FAILED else HealthState.COOLDOWN
+                },
+                null, e.message?.take(120) ?: "network error"
+            )
         }
-        val builder = Request.Builder().url(url).get()
-        if (cfg.providerId != "gemini") builder.header("Authorization", "Bearer $key")
+    }
+
+    /**
+     * Gemini probe: POST generateContent with a trivial "test" prompt.
+     * GET /models is not a reliable reachability signal for Gemini and was
+     * producing NETWORK_FAILED status despite valid keys; a successful
+     * generateContent (HTTP 200) is the definitive ONLINE signal.
+     */
+    private suspend fun probeGemini(cfg: ProviderConfig, key: String, t0: Long): ProviderStatus {
+        val url = "${cfg.baseUrl.trimEnd('/')}/models/gemini-2.5-flash:generateContent?key=$key"
+        val payload =
+            """{"contents":[{"role":"user","parts":[{"text":"ping"}]}],"generationConfig":{"maxOutputTokens":1}}"""
+        val request = okhttp3.Request.Builder()
+            .url(url)
+            .header("Content-Type", "application/json")
+            .post(payload.toRequestBody(JSON_MEDIA_TYPE.toMediaType()))
+            .build()
+        transport.execute(request).use { response ->
+            val latency = System.currentTimeMillis() - t0
+            val body = runCatching { response.body?.string().orEmpty() }.getOrDefault("")
+            // Always surface the raw HTTP code + body to logcat so a failing ping
+            // is diagnosable instead of being swallowed into an opaque status.
+            if (!response.isSuccessful) {
+                android.util.Log.w(
+                    "JarvisProbe",
+                    "gemini probe HTTP ${response.code}: ${body.take(300)}"
+                )
+            }
+            return when {
+                response.isSuccessful -> {
+                    ProviderStatus(cfg.providerId, true, HealthState.HEALTHY, response.code, "ok (${latency}ms)")
+                }
+                response.code == 429 -> {
+                    health.recordFailure(cfg.providerId, FailureCategory.RATE_LIMIT)
+                    ProviderStatus(cfg.providerId, false, HealthState.RATE_LIMITED, 429, "rate limited")
+                }
+                response.code == 401 || response.code == 403 -> {
+                    health.recordFailure(cfg.providerId, FailureCategory.AUTH)
+                    ProviderStatus(cfg.providerId, false, HealthState.AUTH_FAILED, response.code, "auth rejected")
+                }
+                response.code == 404 || response.code == 400 -> {
+                    // Unknown model / malformed request — likely a key or URL problem,
+                    // treat as auth/cooldown so routing backs off rather than spinning.
+                    health.recordFailure(cfg.providerId, FailureCategory.AUTH)
+                    ProviderStatus(cfg.providerId, false, HealthState.AUTH_FAILED, response.code, "HTTP ${response.code}")
+                }
+                else -> ProviderStatus(
+                    cfg.providerId, false, HealthState.DEGRADED, response.code,
+                    "HTTP ${response.code}"
+                )
+            }
+        }
+    }
+
+    private suspend fun probeOpenAICompat(cfg: ProviderConfig, key: String, t0: Long): ProviderStatus {
+        val url = "${cfg.baseUrl.trimEnd('/')}/models"
+        val builder = okhttp3.Request.Builder().url(url).get()
+            .header("Authorization", "Bearer $key")
         return try {
             transport.execute(builder.build()).use { response ->
                 val latency = System.currentTimeMillis() - t0
@@ -140,6 +208,7 @@ class ProviderManager(
     companion object {
         const val MAX_KEY_SLOTS = 5
         const val NEUTRAL_SUCCESS_RATE = 0.8f
+        private const val JSON_MEDIA_TYPE = "application/json"
         private fun nowMs() = System.currentTimeMillis()
     }
 }

@@ -266,7 +266,10 @@ class AlphaVantageFinance(
 }
 
 @Serializable
-internal data class FhQuote(val c: Double? = null)
+internal data class FhQuote(
+    @kotlinx.serialization.SerialName("c") val c: Double? = null,
+    @kotlinx.serialization.SerialName("dp") val dp: Double? = null
+)
 
 class FinnhubFinance(
     private val secrets: SecretsSource,
@@ -280,7 +283,7 @@ class FinnhubFinance(
         val decoded = Jsons.lenient.decodeFromString(
             FhQuote.serializer(), dataGet(transport, url, emptyMap())
         )
-        return StockQuote(symbol, decoded.c, null)
+        return StockQuote(symbol, decoded.c, decoded.dp?.let { "%.2f".format(it) + "%" })
     }
 }
 
@@ -300,6 +303,8 @@ internal data class NasaApod(
     val title: String? = null,
     val explanation: String? = null,
     val url: String? = null,
+    @kotlinx.serialization.SerialName("hdurl") val hdurl: String? = null,
+    @kotlinx.serialization.SerialName("media_type") val mediaType: String? = null,
     val date: String? = null
 )
 
@@ -318,7 +323,7 @@ class NasaSpace(
         return SpaceFact(
             decoded.title ?: "Astronomy Picture of the Day",
             decoded.explanation.orEmpty(),
-            decoded.url.orEmpty(),
+            if (decoded.mediaType == "video") "" else decoded.hdurl ?: decoded.url.orEmpty(),
             decoded.date.orEmpty()
         )
     }

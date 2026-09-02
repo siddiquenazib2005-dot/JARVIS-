@@ -1,7 +1,6 @@
 package com.jarvis.ai
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
@@ -12,7 +11,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import com.jarvis.ai.service.WakeWordService
 import com.jarvis.ai.ui.screens.ChatScreen
 import com.jarvis.ai.ui.theme.JarvisTheme
 
@@ -20,9 +18,7 @@ class MainActivity : ComponentActivity() {
 
     private val permissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ ->
-        maybeStartWakeWordService()
-    }
+    ) { _ -> }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -48,24 +44,11 @@ class MainActivity : ComponentActivity() {
                 add(Manifest.permission.POST_NOTIFICATIONS)
             }
         }.filterNot { granted(it) }
-        if (needed.isEmpty()) {
-            maybeStartWakeWordService()
-        } else {
+        if (needed.isNotEmpty()) {
             permissionsLauncher.launch(needed.toTypedArray())
         }
     }
 
     private fun granted(permission: String): Boolean =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
-
-    private fun maybeStartWakeWordService() {
-        if (granted(Manifest.permission.RECORD_AUDIO)) {
-            startWakeWordService()
-        }
-    }
-
-    private fun startWakeWordService() {
-        val intent = Intent(this, WakeWordService::class.java)
-        ContextCompat.startForegroundService(this, intent)
-    }
 }

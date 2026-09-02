@@ -1,7 +1,6 @@
 package com.jarvis.ai.provider
 
 import com.jarvis.ai.data.model.Message
-import com.jarvis.ai.orchestrator.OfflineProvider
 import com.jarvis.ai.provider.adapters.LlmProviderFactory
 import com.jarvis.ai.provider.adapters.NewsItem
 import com.jarvis.ai.provider.adapters.SearchProvider
@@ -87,31 +86,41 @@ class ProviderRouter(
                 }
                 val (slot, secret) = picked
                 val attemptStart = now()
+                var attemptBuffer = StringBuilder()
                 try {
                     val provider = llmFactory(cfg, secret, model)
                     var produced = false
                     if (request.stream) {
+                        // Buffer streamed deltas locally; only COMMIT them to the UI
+                        // once this provider finishes successfully. If it fails mid-stream
+                        // (timeout/rate-limit) and we rotate to another provider, we must
+                        // not have already leaked the partial reply (garbled/duplicated text).
                         provider.streamChat(request.history, request.systemPrompt, model)
                             .collect { delta ->
                                 if (delta.isNotBlank()) {
                                     produced = true
+                                    attemptBuffer.append(delta)
                                 }
-                                emit(RouteChunk.Delta(delta))
                             }
                         if (!produced) throw IOException("empty stream")
+                        health.recordSuccess(cfg.providerId, now() - attemptStart)
+                        keys.markSuccess(slot)
+                        emit(RouteChunk.Delta(attemptBuffer.toString()))
                     } else {
                         val text = provider.chatOnce(request.history, request.systemPrompt, model)
                         if (text.isBlank()) throw IOException("empty content")
+                        health.recordSuccess(cfg.providerId, now() - attemptStart)
+                        keys.markSuccess(slot)
                         emit(RouteChunk.Delta(text))
                     }
-                    health.recordSuccess(cfg.providerId, now() - attemptStart)
-                    keys.markSuccess(slot)
                     trail += "${cfg.providerId}:success"
                     emit(RouteChunk.Finished(successReport(request, cfg, model, startedAt, trail, retries, fallbacks)))
                     return@flow
                 } catch (ce: CancellationException) {
                     throw ce
                 } catch (e: Exception) {
+                    // Discard any partial buffer from this attempt before rotating.
+                    attemptBuffer.clear()
                     val category = FailureClassifier.classify(e.message)
                     keys.markFailure(slot, category, now())
                     health.recordFailure(cfg.providerId, category)
@@ -134,23 +143,26 @@ class ProviderRouter(
             }
         }
 
-        // ---- terminal local fallback ----
+        // ---- terminal fallback (fully-online policy) ----
+        // No local/offline reply engine. If every provider was skipped or failed,
+        // surface the single availability message instead of an offline fabrication.
         try {
-            val offlineText = OfflineProvider().chatOnce(
-                request.history, request.systemPrompt, "offline"
-            )
-            emit(RouteChunk.Delta(offlineText))
+            emit(RouteChunk.Delta(com.jarvis.ai.orchestrator.MasterOrchestrator.NOT_AVAILABLE_MESSAGE))
             trail += "offline:fallback"
             emit(
                 RouteChunk.Finished(
                     ExecutionReport(
-                        success = true,
+                        success = false,
                         metadata = metadataOf(request.capability, "offline", "local", startedAt, retries, fallbacks),
                         attempts = trail,
-                        error = null
+                        error = "no provider reachable"
                     )
                 )
             )
+        } catch (ce: CancellationException) {
+            // Downstream cancelled — re-throw so cancellation is preserved and we
+            // don't fabricate an extra Finished after the consumer already left.
+            throw ce
         } catch (e: Exception) {
             emit(
                 RouteChunk.Finished(

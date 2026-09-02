@@ -55,19 +55,21 @@ fun GlowBackground(modifier: Modifier = Modifier, level: Float = 0f) {
     Canvas(modifier = modifier) {
         drawRect(
             Brush.verticalGradient(
-                listOf(Color(0xFF05070F), Color(0xFF071122), Color(0xFF03050C))
+                listOf(Color(0xFF0F0F12), Color(0xFF121216), Color(0xFF0D0D10))
             )
         )
 
+        // Very subtle ambient accents (modern flat look); greatly muted vs the old
+        // neon glow so the UI reads clean like ChatGPT / Gemini / Claude.
         drawCircle(
             brush = Brush.radialGradient(
                 listOf(
-                    palette.cyan.copy(alpha = (0.13f + 0.22f * energy).coerceAtMost(0.35f)),
+                    palette.electricBlue.copy(alpha = (0.05f + 0.06f * energy).coerceAtMost(0.12f)),
                     Color.Transparent
                 ),
                 center = Offset(
-                    size.width * (0.14f + 0.06f * sin(phase * TAU)),
-                    size.height * 0.05f
+                    size.width * (0.2f + 0.05f * sin(phase * TAU)),
+                    size.height * 0.08f
                 ),
                 radius = size.width * 0.9f
             )
@@ -75,28 +77,24 @@ fun GlowBackground(modifier: Modifier = Modifier, level: Float = 0f) {
         drawCircle(
             brush = Brush.radialGradient(
                 listOf(
-                    palette.violet.copy(alpha = (0.11f + 0.18f * energy).coerceAtMost(0.3f)),
+                    palette.cyan.copy(alpha = (0.04f + 0.05f * energy).coerceAtMost(0.1f)),
                     Color.Transparent
                 ),
                 center = Offset(
-                    size.width * (0.88f - 0.06f * sin(phase * TAU)),
-                    size.height * 0.97f
+                    size.width * (0.82f - 0.05f * sin(phase * TAU)),
+                    size.height * 0.95f
                 ),
-                radius = size.width * 0.85f
+                radius = size.width * 0.8f
             )
         )
 
-        val gridStep = 64.dp.toPx()
-        var x = gridStep
-        while (x < size.width) {
-            drawLine(palette.gridLine, Offset(x, 0f), Offset(x, size.height))
-            x += gridStep
-        }
-        var y = gridStep
-        while (y < size.height) {
-            drawLine(palette.gridLine, Offset(0f, y), Offset(size.width, y))
-            y += gridStep
-        }
+        // Faint horizontal rule only (no grid), giving a subtle depth cue.
+        val ruleY = size.height * 0.5f
+        drawLine(
+            Color.White.copy(alpha = 0.02f),
+            Offset(size.width * 0.1f, ruleY),
+            Offset(size.width * 0.9f, ruleY)
+        )
 
         particles.forEach { p ->
             val span = size.height + 120f
@@ -105,8 +103,8 @@ fun GlowBackground(modifier: Modifier = Modifier, level: Float = 0f) {
             val py = ((rawY % span) + span) % span - 60f
             val px = p.xFraction * size.width + sin(phase * TAU + p.driftPhase) * (16f + 26f * energy)
             drawCircle(
-                color = palette.particle.copy(alpha = (p.alpha + 0.25f * energy).coerceAtMost(0.75f)),
-                radius = p.radius * (1f + 0.4f * energy),
+                color = palette.particle.copy(alpha = (p.alpha * 0.5f + 0.06f * energy).coerceAtMost(0.35f)),
+                radius = p.radius,
                 center = Offset(px, py)
             )
         }

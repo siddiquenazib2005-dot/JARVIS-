@@ -62,18 +62,22 @@ class AudioLevelEngine(private val context: Context) {
 
     fun stop() {
         running.set(false)
+        val record = audioRecord ?: return
+        // Stop recording FIRST: record.stop() makes any pending blocking read()
+        // in the capture thread return immediately, so the loop observes
+        // running==false and exits instead of blocking forever on a silent mic.
+        // Only then join the thread so we never release() a record a thread is
+        // still blocked reading (use-after-release / IllegalStateException).
+        runCatching {
+            if (record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                record.stop()
+            }
+        }
         captureThread?.let { thread ->
             runCatching { thread.join(JOIN_TIMEOUT_MS) }
         }
         captureThread = null
-        audioRecord?.let { record ->
-            runCatching {
-                if (record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                    record.stop()
-                }
-            }
-            releaseQuietly(record)
-        }
+        releaseQuietly(record)
         audioRecord = null
         _level.value = 0f
     }

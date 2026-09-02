@@ -36,6 +36,17 @@ class SpeechRecognitionManager(private val context: Context) {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            // Prevent premature silence cutoff: keep the recognizer open for a
+            // minimum window so a short pause mid-phrase doesn't end the session
+            // and surface ERROR_SPEECH_TIMEOUT / ERROR_NO_MATCH.
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                MIN_SILENCE_WINDOW_MS.toLong()
+            )
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                MIN_SILENCE_WINDOW_MS.toLong()
+            )
         }
         val started = runCatching {
             engine.setRecognitionListener(listener)
@@ -62,24 +73,37 @@ class SpeechRecognitionManager(private val context: Context) {
     }
 
     fun destroy() {
-        mainHandler.post {
-            recognizer?.let { engine ->
-                runCatching { engine.destroy() }
-            }
-            recognizer = null
-            onPartial = null
-            onFinal = null
-            onError = null
+        // Tear down on the main thread. If already on the main thread, do it
+        // synchronously so a queued mainHandler.post from a prior destroy() cannot
+        // interleave with (and kill) a recognizer we just created synchronously.
+        // Only fall back to a posted runnable when called from a background thread.
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            destroyOnMain()
+        } else {
+            mainHandler.post { destroyOnMain() }
         }
+    }
+
+    private fun destroyOnMain() {
+        recognizer?.let { engine ->
+            runCatching { engine.destroy() }
+        }
+        recognizer = null
+        onPartial = null
+        onFinal = null
+        onError = null
     }
 
     private fun obtainRecognizer(): SpeechRecognizer? {
         recognizer?.let { return it }
         val created = if (Looper.myLooper() == Looper.getMainLooper()) {
+            // SpeechRecognizer must be created on the main thread; when already there,
+            // create synchronously (do NOT post + await a latch — that would deadlock
+            // the main looper). destroy() is equally synchronous on the main thread,
+            // so create and destroy naturally serialize.
             createRecognizer()
         } else {
-            // SpeechRecognizer must be created on the main thread; block the caller briefly
-            // so start() can report success synchronously.
+            // Block the caller briefly so start() can report success synchronously.
             val latch = CountDownLatch(1)
             var createdOnMain: SpeechRecognizer? = null
             mainHandler.post {
@@ -148,5 +172,7 @@ class SpeechRecognitionManager(private val context: Context) {
 
     private companion object {
         const val CREATE_TIMEOUT_MS = 2000L
+        // 2.5s min window before the recognizer treats silence as end-of-speech.
+        const val MIN_SILENCE_WINDOW_MS = 2500
     }
 }

@@ -67,7 +67,6 @@ class MemoryClassifier {
             Regex("csk-[A-Za-z0-9]{8,}"),
             Regex("tvly-[A-Za-z0-9\\-]{8,}"),
             Regex("pcsk_[A-Za-z0-9_\\-]{8,}"),
-            Regex("AQ\\.[A-Za-z0-9_\\-]{10,}"),
             Regex("eyJ[A-Za-z0-9._\\-]{20,}"),          // JWT / Qdrant key
             Regex("(?i)(api[_-]?key|secret|password)\\s*[:=]\\s*\\S{6,}")
         ).any { it.containsMatchIn(content) }

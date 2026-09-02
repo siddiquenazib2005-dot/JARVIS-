@@ -268,11 +268,11 @@ class AgentCore(
                     else A11yResult.failure(A11yErrorCode.NODE_NOT_FOUND, action = "tap_coords", target = text, message = "OCR could not find: $text")
                 }
                 is Action.Type -> {
-                    val value = action.value
+                    val value = action.value?.let { workingMemory.interpolate(it) }
                     if (value != null) service.typeText(value) else A11yResult.success(action = "type")
                 }
                 is Action.ClearType -> {
-                    val value = action.value
+                    val value = action.value?.let { workingMemory.interpolate(it) }
                     if (value != null) service.typeText(value, clearFirst = true)
                     else A11yResult.success(action = "type")
                 }
@@ -318,8 +318,9 @@ class AgentCore(
                     return
                 }
                 // Vision-only actions are not executed by the automation loop.
-                is Action.Screenshot, is Action.ReadScreen, is Action.AiPrompt ->
+                is Action.Screenshot, is Action.ReadScreen ->
                     A11yResult.success(action = action.action)
+                is Action.AiPrompt -> executeAiPrompt(action, service)
             }
 
             if (result.isFailure) {
@@ -343,6 +344,47 @@ class AgentCore(
      */
     private fun findPackageByLabel(label: String): String? =
         PackageResolver.resolve(label, PackageManagerAppLookup.create(context.packageManager))
+
+    /**
+     * Executes the 'ai_prompt' action: opens the delegated AI app, types the
+     * (interpolated) prompt, waits briefly for streaming, then captures the
+     * resulting screen text into [Action.AiPrompt.outputKey] so the next step
+     * can reference it via {key} interpolation.
+     */
+    private suspend fun executeAiPrompt(
+        action: Action.AiPrompt,
+        service: JarvisAccessibilityService
+    ): A11yResult {
+        val pkg = action.packageName?.takeIf { it.isNotBlank() }
+        if (pkg == null) {
+            return A11yResult.failure(
+                A11yErrorCode.INVALID_ACTION, action = "ai_prompt",
+                message = "ai_prompt missing package"
+            )
+        }
+        runCatching { service.openAppByPackage(pkg) }.getOrElse {
+            return A11yResult.failure(
+                A11yErrorCode.APP_NOT_FOUND, action = "ai_prompt", target = pkg,
+                message = "Could not open $pkg: ${it.message}"
+            )
+        }
+        kotlinx.coroutines.delay(1600)
+        val prompt = action.prompt?.let { workingMemory.interpolate(it) }.orEmpty()
+        if (prompt.isNotBlank()) {
+            runCatching { service.typeText(prompt) }.getOrElse {
+                return A11yResult.failure(
+                    A11yErrorCode.UNKNOWN, action = "ai_prompt",
+                    message = "Could not type prompt into $pkg"
+                )
+            }
+            kotlinx.coroutines.delay(2600)
+        }
+        action.outputKey?.let { key ->
+            val text = runCatching { getScreenReader().extractAllText() }.getOrDefault("")
+            workingMemory.set(key, text)
+        }
+        return A11yResult.success(action = "ai_prompt", message = "prompted $pkg")
+    }
 
     suspend fun testConnection(): Boolean {
         return try {
@@ -472,6 +514,7 @@ sealed class Action {
         const val LONG_PRESS = "long_press"
         const val LOCK_SCREEN = "lock_screen"
         const val CLOSE_APP = "close_app"
+        const val AI_PROMPT = "ai_prompt"
     }
 }
 
@@ -482,24 +525,28 @@ object ActionJsonParser {
     )
     
     fun validate(json: String): ValidationResult {
-        val errors = mutableListOf<String>()
         // Try the raw payload first, then re-try after extracting the JSON array
         // from markdown fences / surrounding prose (very common LLM output).
+        // Errors are tracked PER CANDIDATE so a stale failure from the first
+        // attempt can never poison a successful parse of the second.
+        var lastErrors = emptyList<String>()
         for (candidate in listOf(json, extractArray(json)).distinct()) {
             try {
                 val array = org.json.JSONArray(candidate)
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    if (!obj.has("action")) {
-                        errors.add("Action at index $i missing 'action' field")
+                val missing = buildList {
+                    for (i in 0 until array.length()) {
+                        if (!array.getJSONObject(i).has("action")) {
+                            add("Action at index $i missing 'action' field")
+                        }
                     }
                 }
-                return ValidationResult(errors.isEmpty(), errors)
+                if (missing.isEmpty()) return ValidationResult(true, emptyList())
+                lastErrors = missing
             } catch (e: Exception) {
-                errors.add("Invalid JSON: ${e.message}")
+                lastErrors = listOf("Invalid JSON: ${e.message}")
             }
         }
-        return ValidationResult(false, errors)
+        return ValidationResult(false, lastErrors)
     }
     
     fun parse(json: String): List<Action>? {
@@ -564,6 +611,11 @@ object ActionJsonParser {
                     Action.CLOSE_APP -> actions.add(Action.CloseApp(
                         obj.optString("label").ifBlank { null },
                         obj.optString("package").ifBlank { null }
+                    ))
+                    Action.AI_PROMPT -> actions.add(Action.AiPrompt(
+                        obj.optString("package").ifBlank { null },
+                        obj.optString("prompt").ifBlank { null },
+                        obj.optString("outputKey").ifBlank { null }
                     ))
                     else -> {}
                 }

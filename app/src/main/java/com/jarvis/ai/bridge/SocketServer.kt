@@ -1,8 +1,6 @@
 package com.jarvis.ai.bridge
 
 import android.content.Context
-import android.os.Build
-import android.os.Process
 import com.jarvis.ai.intelligence.TaskRouter
 import com.jarvis.ai.orchestrator.MasterOrchestrator
 import com.jarvis.ai.provider.ProviderRouter
@@ -12,8 +10,10 @@ import kotlinx.coroutines.flow.toList
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
+import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.security.MessageDigest
 
 class SocketServer(
     private val context: Context,
@@ -28,26 +28,43 @@ class SocketServer(
     
     private val socketFile: java.io.File
         get() = java.io.File(context.filesDir, SOCKET_NAME)
-    
-    private val allowedUids = setOf(
-        context.applicationInfo.uid,
-        2000,
-        "com.termux".hashCode()
-    )
 
-    private fun isAuthorized(): Boolean {
+    private val authTokenBase: String =
+        context.packageName + ":" + android.os.Build.VERSION.SDK_INT
+
+    private fun isLoopback(socket: Socket): Boolean {
         return try {
-            val callingUid = Process.myUid()
-            callingUid in allowedUids
+            socket.inetAddress.isLoopbackAddress
         } catch (e: Exception) {
             false
         }
+    }
+
+    private fun isAuthorized(clientSocket: Socket, token: String?): Boolean {
+        // TCP control socket: restrict to loopback, then require the shared
+        // token (derived from package name) so any local process must
+        // explicitly opt-in rather than being implicitly trusted.
+        if (!isLoopback(clientSocket)) return false
+        if (token.isNullOrBlank()) return false
+        val expected = sha256(authTokenBase)
+        return constantTimeEquals(expected, sha256(token.trim()))
+    }
+
+    private fun sha256(value: String): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun constantTimeEquals(a: String, b: String): Boolean {
+        if (a.length != b.length) return false
+        var result = 0
+        for (i in a.indices) result = result or (a[i].code xor b[i].code)
+        return result == 0
     }
     
     companion object {
         const val SOCKET_NAME = "jarvis.port"
         private const val MAX_COMMAND_LENGTH = 2000
-        private const val MAX_REQUESTS_PER_SECOND = 10
     }
     
     fun start() {
@@ -107,8 +124,8 @@ class SocketServer(
                 return@withContext
             }
 
-            if (!isAuthorized()) {
-                writer.println(createErrorResponse("", "unauthorized"))
+            if (line.length > MAX_COMMAND_LENGTH) {
+                writer.println(createErrorResponse("", "request too long"))
                 return@withContext
             }
 
@@ -117,8 +134,13 @@ class SocketServer(
                 writer.println(createErrorResponse("", "invalid JSON"))
                 return@withContext
             }
-            
-            val (requestId, cmd) = request
+
+            val (requestId, cmd, token) = request
+
+            if (!isAuthorized(clientSocket, token)) {
+                writer.println(createErrorResponse(requestId, "unauthorized"))
+                return@withContext
+            }
             
             when (cmd.lowercase()) {
                 "status" -> handleStatus(writer, requestId)
@@ -147,7 +169,7 @@ class SocketServer(
         
         val statusJson = buildString {
             append("{")
-            append("\"requestId\": \"$requestId\",")
+            append("\"requestId\": \"${escapeJson(requestId)}\",")
             append("\"status\": \"done\",")
             append("\"result\": {")
             append("\"service\": \"running\",")
@@ -164,20 +186,20 @@ class SocketServer(
         // Get history from vector memory
         val historyJson = "[]"
         
-        writer.println("""{"requestId":"$requestId","status":"done","result":$historyJson}""")
+        writer.println("""{"requestId":"${escapeJson(requestId)}","status":"done","result":$historyJson}""")
     }
 
     private suspend fun handleProviders(writer: PrintWriter, requestId: String) {
         // Get provider stats
         val providersJson = "[]"
         
-        writer.println("""{"requestId":"$requestId","status":"done","result":$providersJson}""")
+        writer.println("""{"requestId":"${escapeJson(requestId)}","status":"done","result":$providersJson}""")
     }
 
     private suspend fun handleMemory(writer: PrintWriter, requestId: String) {
         // Get memory context
         val context = ""
-        val contextJson = """{"requestId":"$requestId","status":"done","result":"${escapeJson(context)}"}"""
+        val contextJson = """{"requestId":"${escapeJson(requestId)}","status":"done","result":"${escapeJson(context)}"}"""
         
         writer.println(contextJson)
     }
@@ -194,36 +216,49 @@ class SocketServer(
             val deltas = result.filterIsInstance<com.jarvis.ai.orchestrator.OrchestratorUpdate.Delta>()
             val responseText = deltas.joinToString("") { it.text }
             
-            writer.println("""{"requestId":"$requestId","status":"done","result":"${escapeJson(responseText)}"}""")
+            writer.println("""{"requestId":"${escapeJson(requestId)}","status":"done","result":"${escapeJson(responseText)}"}""")
             writer.flush()
         }
         
         job.join()
     }
 
-    private fun parseRequest(line: String): Pair<String, String>? {
+    private fun parseRequest(line: String): Triple<String, String, String>? {
         return try {
             val json = org.json.JSONObject(line)
             val cmd = json.optString("cmd", "")
             val requestId = json.optString("requestId", "")
-            
+            val token = json.optString("token", "")
+
             if (cmd.isBlank()) null
-            else Pair(requestId, cmd)
+            else Triple(requestId, cmd, token)
         } catch (e: Exception) {
             null
         }
     }
 
     internal fun createErrorResponse(requestId: String, error: String): String {
-        return """{"requestId":"$requestId","status":"error","result":"$error"}"""
+        return """{"requestId":"${escapeJson(requestId)}","status":"error","result":"${escapeJson(error)}"}"""
     }
 
     internal fun escapeJson(s: String): String {
-        return s
+        var result = s
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("\t", "\\t")
+            .replace("\b", "\\b")
+            .replace("\u000C", "\\f")
+        // Escape any remaining C0/C1 control characters per RFC 8259
+        val sb = StringBuilder(result.length + 16)
+        for (ch in result) {
+            if (ch.code in 0x00..0x1F) {
+                sb.append("\\u").append(String.format("%04x", ch.code))
+            } else {
+                sb.append(ch)
+            }
+        }
+        return sb.toString()
     }
 }

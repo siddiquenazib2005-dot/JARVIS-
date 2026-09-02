@@ -89,12 +89,14 @@ object PackageResolver {
             if (label == input || label.contains(input)) return app.packageName
         }
 
-        for (app in lookup.installedApps()) {
+        val allApps = lookup.installedApps()
+
+        for (app in allApps) {
             val label = app.label.lowercase().trim()
             if (label.isNotBlank() && (label == input || label.contains(input))) return app.packageName
         }
 
-        for (app in lookup.installedApps()) {
+        for (app in allApps) {
             val pkg = app.packageName.lowercase()
             if (pkg.contains(input) || input.contains(pkg)) return app.packageName
         }

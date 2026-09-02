@@ -54,8 +54,14 @@ class TtsEngine(context: Context) {
         val spoken = if (cleaned.length > maxLength) cleaned.substring(0, maxLength) else cleaned
         if (spoken.isBlank()) return
         utteranceLength = spoken.length
-        runCatching {
+        // TextToSpeech.speak signals failures via its return code, not an exception.
+        // If it fails, onStart/onDone/onError/onStop never fire, so _isSpeaking would
+        // be left forever true and the consume loop would stall. Reset on any failure.
+        val rc = runCatching {
             tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, UTTERANCE_ID_REPLY)
+        }.getOrDefault(TextToSpeech.ERROR)
+        if (rc != TextToSpeech.SUCCESS) {
+            resetPlayback()
         }
     }
 

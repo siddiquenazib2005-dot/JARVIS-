@@ -73,6 +73,18 @@ class JarvisViewModel(
 
     private var generationJob: Job? = null
     private var listening = false
+    // Tracks whether the user is currently HOLDING the mic. Guards the permission
+    // flow: if the user releases while the system permission dialog is up, we must
+    // not start a silent listening session that would yield "I did not catch that."
+    private var micHeld = false
+
+    private val PROVIDER_LABELS = mapOf(
+        "GEMINI_API_KEY" to "Gemini",
+        "OPENAI_API_KEY" to "OpenAI",
+        "GROQ_API_KEY" to "Groq",
+        "OPENROUTER_API_KEY" to "OpenRouter",
+        "DEEPSEEK_API_KEY" to "DeepSeek"
+    )
 
     /** Tool awaiting explicit confirmation ("yes" routes back through the gate). */
     private var pendingConfirmation: String? = null
@@ -152,6 +164,10 @@ class JarvisViewModel(
                 val toSpeak = ttsQueue.value
                 if (toSpeak != null && toSpeak.isNotBlank() && !tts.muted) {
                     if (!tts.isSpeaking.value) {
+                        // Consume the queued utterance so it is spoken exactly once.
+                        // Without clearing, the finished utterance is re-played in an
+                        // infinite loop every 200ms once TTS finishes.
+                        ttsQueue.value = null
                         tts.speak(toSpeak)
                     }
                 }
@@ -245,11 +261,33 @@ class JarvisViewModel(
                             if (remaining.isNotBlank()) {
                                 fullText.append(remaining).append(" ")
                                 ttsQueue.value = remaining.trim()
+                                // Persist the flushed tail into the live bubble.
+                                // Without this the final sentence is spoken but the
+                                // displayed/persisted reply ends early (truncation).
+                                updateReply(replyId, fullText.toString().trim())
                             }
+                            // Local/tool intents that emitted a whole reply as a single
+                            // Delta may never have created the bubble yet via `started`;
+                            // ensure the bubble reflects the full text in that case too.
+                            if (!started && fullText.isNotBlank()) {
+                                started = true
+                                _uiState.update { s ->
+                                    s.copy(
+                                        messages = s.messages + Message(
+                                            id = replyId,
+                                            sender = Sender.JARVIS,
+                                            text = fullText.toString().trim()
+                                        )
+                                    )
+                                }
+                            }
+                            // backendOnline must reflect the REAL success of this attempt.
+                            // OR-ing it leaves the flag stuck true forever once any
+                            // request succeeds, even while offline. Use the actual outcome.
                             _uiState.update { s ->
                                 s.copy(
                                     activeProvider = update.provider,
-                                    backendOnline = update.success || s.backendOnline
+                                    backendOnline = update.success
                                 )
                             }
                         }
@@ -261,6 +299,8 @@ class JarvisViewModel(
                 if (remaining.isNotBlank()) {
                     fullText.append(remaining).append(" ")
                     ttsQueue.value = remaining.trim()
+                    // Write the flushed tail into the live bubble.
+                    updateReply(replyId, fullText.toString().trim())
                 }
 
                 // Enqueue the full accumulated text if no sentences were emitted
@@ -270,6 +310,22 @@ class JarvisViewModel(
                     val text = fullText.toString().trim()
                     if (text.isNotBlank()) {
                         ttsQueue.value = text
+                    }
+                }
+
+                // Reconcile the bubble: if no sentence boundary was ever produced
+                // (started stayed false) the reply was never shown — create it now
+                // so unpadded model output is not silently dropped from the UI.
+                if (!started && fullText.isNotBlank()) {
+                    started = true
+                    _uiState.update { s ->
+                        s.copy(
+                            messages = s.messages + Message(
+                                id = replyId,
+                                sender = Sender.JARVIS,
+                                text = fullText.toString().trim()
+                            )
+                        )
                     }
                 }
 
@@ -355,6 +411,21 @@ class JarvisViewModel(
     fun configuredProviders(): List<String> =
         runtime.providerManager.configuredProviderIds()
 
+    /**
+     * Saves a single provider key and re-discovers configuration so routing
+     * picks it up immediately. Returns a user-facing confirmation string.
+     */
+    fun saveKeyForField(envName: String, value: String): String {
+        val trimmed = value.trim()
+        if (trimmed.isEmpty() || trimmed == "••••••••") {
+            return "Key cannot be blank, sir."
+        }
+        saveProviderKey(envName, trimmed)
+        runtime.providerManager.bootstrapFromSecrets()
+        val label = PROVIDER_LABELS[envName] ?: envName
+        return "$label key saved ✓"
+    }
+
     fun hasKey(envName: String): Boolean =
         runtime.secrets.get("$envName#1").orEmpty().isNotBlank()
 
@@ -395,6 +466,9 @@ class JarvisViewModel(
         }
         generationJob?.cancel()
         generationJob = null
+        // Drop any half-buffered sentence so a cancelled reply does not leak
+        // text into the next request's first chunk.
+        sentenceParser.clear()
         tts.stop()
         _uiState.update { s ->
             s.copy(
@@ -474,6 +548,12 @@ class JarvisViewModel(
 
     fun startVoiceInput(): Boolean {
         if (listening) return true
+        // When reached through the permission flow, the user may have already
+        // released the mic while the system dialog was covering the screen. In that
+        // case do NOT open a session that will only hear silence (yielding the
+        // false "I did not catch that, sir."). The mic-press/release intent is
+        // tracked via recordMicPress()/recordMicRelease().
+        if (!micHeld) return false
         if (!stt.isAvailable) {
             setNotice("Voice input is not available on this device, sir.")
             return false
@@ -483,8 +563,8 @@ class JarvisViewModel(
             return false
         }
         // Let SpeechRecognizer own the microphone exclusively: no second
-        // AudioRecord (orb level already pulses via the UI) and the wake-word
-        // loop backs off through VoiceSessionGate. Two competing listeners
+        // AudioRecord (orb level already pulses via the UI). VoiceSessionGate
+        // signals other listeners to back off. Two competing listeners would
         // make the recognizer hear silence and time out.
         VoiceSessionGate.active = true
         listening = true
@@ -496,7 +576,15 @@ class JarvisViewModel(
                     stopGeneration()
                 }
                 endListening()
-                send(final)
+                val transcript = final.trim()
+                // If a previous generation is still in flight, sending now would be
+                // silently dropped by dispatchToOrchestrator's isLoading guard. Give
+                // the user explicit feedback instead of losing their spoken input.
+                if (transcript.isNotEmpty() && _uiState.value.isLoading) {
+                    setNotice("Finishing that reply, sir. Say it again once it's done.")
+                } else {
+                    send(transcript)
+                }
             },
             onError = { code ->
                 endListening()
@@ -513,8 +601,21 @@ class JarvisViewModel(
     }
 
     fun stopVoiceInput() {
+        // Track release so the permission callback does not start a silent session.
+        micHeld = false
         if (!listening) return
+        // Signal the recognizer to finalize (delivers onFinal with the transcript)...
         stt.stop()
+        // ...and IMMEDIATELY clear the active session + UI so the pulsing mic and
+        // "Listening, sir…" state do not stay stuck until an async onFinal/onError
+        // arrives (or is never delivered on flaky vendor services). A subsequent
+        // press of the mic can then start a fresh session right away.
+        endListening()
+    }
+
+    /** Records that the user is pressing the mic (guards the permission flow). */
+    fun recordMicPress() {
+        micHeld = true
     }
 
     private fun endListening() {
@@ -545,10 +646,15 @@ class JarvisViewModel(
     }
 
     private suspend fun persistReplyIfAny(sessionId: String, replyId: String) {
+        // Only persist into the session that is still active. If the user switched
+        // sessions while a generation was being cancelled, the state's messages now
+        // belong to a different session and must not leak into this one.
+        if (_uiState.value.activeSessionId != sessionId) return
         val messages = _uiState.value.messages
-        val reply = messages.firstOrNull { it.id == replyId }
-            ?: messages.lastOrNull { it.sender == Sender.JARVIS }
-            ?: return
+        // Find ONLY the reply we generated for this request. The prior fallback to
+        // lastOrNull { it.sender == Sender.JARVIS } could grab an unrelated bubble
+        // after a session switch and write it into the wrong session.
+        val reply = messages.firstOrNull { it.id == replyId } ?: return
         if (reply.text.isBlank() || reply.text == "…") return
         withContext(Dispatchers.IO) {
             runCatching {

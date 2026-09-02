@@ -11,8 +11,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -21,7 +22,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jarvis.ai.data.model.Message
 import com.jarvis.ai.data.model.Sender
@@ -35,43 +38,73 @@ import java.util.Locale
 fun MessageBubble(message: Message, modifier: Modifier = Modifier) {
     val palette = MaterialTheme.extended()
     val isUser = message.sender == Sender.USER
+    val isError = message.isError
     val time = remember(message.timestamp) {
         SimpleDateFormat("h:mm a", Locale.US).format(Date(message.timestamp))
     }
-    val shape = RoundedCornerShape(
-        topStart = if (isUser) 18.dp else 4.dp,
-        topEnd = if (isUser) 4.dp else 18.dp,
-        bottomStart = 18.dp,
-        bottomEnd = 18.dp
-    )
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.Bottom,
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.Top,
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         if (!isUser) {
-            JarvisOrb(size = 26.dp)
-            Spacer(Modifier.width(8.dp))
+            // Clean circular avatar (modern chat style), no orbiting glow ring.
+            Box(
+                modifier = Modifier
+                    .padding(top = 2.dp)
+                    .size(28.dp)
+                    .background(
+                        Brush.linearGradient(listOf(palette.electricBlue, palette.violet)),
+                        CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "J",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.width(10.dp))
         }
         Column(
-            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
+            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+            modifier = if (isUser) Modifier.weight(0.9f) else Modifier.weight(1f)
         ) {
+            if (!isUser) {
+                Text(
+                    "J.A.R.V.I.S.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
             Surface(
-                shape = shape,
-                color = if (isUser) Color.Transparent else palette.jarvisBubble,
-                border = if (isUser) null else BorderStroke(1.dp, palette.jarvisBorder),
+                shape = RoundedCornerShape(
+                    topStart = if (isUser) 16.dp else 4.dp,
+                    topEnd = if (isUser) 4.dp else 16.dp,
+                    bottomStart = 16.dp,
+                    bottomEnd = 16.dp
+                ),
+                color = when {
+                    isUser -> Color.Transparent
+                    isError -> Color(0xFF2A1D1F).copy(alpha = 0.85f)
+                    else -> palette.jarvisBubble
+                },
+                border = if (!isUser && !isError) BorderStroke(1.dp, palette.jarvisBorder) else null,
                 modifier = Modifier
-                    .widthIn(max = 320.dp)
                     .animateContentSize(animationSpec = tween(120))
             ) {
                 when {
                     isUser -> Box(
                         Modifier
-                            .background(palette.userBrush, shape)
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                            .background(palette.userBrush, RoundedCornerShape(16.dp))
+                            .padding(horizontal = 16.dp, vertical = 11.dp)
                     ) {
                         Text(
                             text = message.text,
@@ -86,25 +119,27 @@ fun MessageBubble(message: Message, modifier: Modifier = Modifier) {
                         TypingIndicator()
                     }
 
-                    message.isError -> Text(
+                    isError -> Text(
                         text = message.text,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp)
                     )
 
                     else -> MarkdownText(
                         markdown = message.text,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
                     )
                 }
             }
-            Text(
-                text = "${message.sender.label} • $time",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 3.dp, start = 4.dp, end = 4.dp)
-            )
+            if (isUser) {
+                Text(
+                    text = time,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(top = 3.dp, end = 4.dp)
+                )
+            }
         }
     }
 }

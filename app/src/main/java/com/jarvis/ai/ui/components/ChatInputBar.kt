@@ -47,7 +47,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import com.jarvis.ai.ui.theme.CyanGlow
 import com.jarvis.ai.ui.theme.ElectricBlue
 import com.jarvis.ai.ui.theme.ErrorRed
 import com.jarvis.ai.ui.theme.PanelBlue
@@ -87,22 +86,22 @@ fun ChatInputBar(
                     modifier = Modifier.weight(1f),
                     placeholder = {
                         Text(
-                            if (isListening) "Listening, sir…" else "Message J.A.R.V.I.S…",
+                            if (isListening) "Listening, sir…" else "Ask J.A.R.V.I.S. anything…",
                             color = TextSecondary
                         )
                     },
-                    shape = RoundedCornerShape(26.dp),
+                    shape = RoundedCornerShape(24.dp),
                     maxLines = 4,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(
                         onSend = { if (!isLoading && value.isNotBlank()) onSend(value) }
                     ),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = CyanGlow.copy(alpha = 0.55f),
-                        unfocusedBorderColor = Color(0xFF27354B),
-                        focusedContainerColor = PanelBlue.copy(alpha = 0.9f),
-                        unfocusedContainerColor = PanelBlue.copy(alpha = 0.75f),
-                        cursorColor = CyanGlow,
+                        focusedBorderColor = ElectricBlue.copy(alpha = 0.4f),
+                        unfocusedBorderColor = Color(0xFF2E2E36),
+                        focusedContainerColor = Color(0xFF1A1A1F),
+                        unfocusedContainerColor = Color(0xFF1A1A1F),
+                        cursorColor = ElectricBlue,
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary
                     ),
@@ -196,8 +195,8 @@ private fun SendStopButton(
             .background(
                 brush = when {
                     isLoading -> Brush.linearGradient(listOf(ErrorRed, ErrorRed.copy(alpha = 0.7f)))
-                    !canSend -> Brush.linearGradient(listOf(Color(0xFF223047), Color(0xFF1A2436)))
-                    else -> Brush.linearGradient(listOf(CyanGlow, ElectricBlue))
+                    !canSend -> Brush.linearGradient(listOf(Color(0xFF2A2A33), Color(0xFF24242C)))
+                    else -> Brush.linearGradient(listOf(ElectricBlue, ElectricBlue.copy(alpha = 0.8f)))
                 },
                 shape = CircleShape
             )
@@ -217,7 +216,7 @@ private fun SendStopButton(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.Send,
                 contentDescription = "Send",
-                tint = if (!canSend) TextSecondary else Color(0xFF03121A)
+                tint = if (!canSend) TextSecondary else Color.White
             )
         }
     }
