@@ -43,6 +43,7 @@ private val map: Map<String, PermissionLevel> = buildMap {
         put("open_settings", PermissionLevel.LOW_RISK)
         put("memory_delete", PermissionLevel.CONFIRM_REQUIRED)
         put("memory_wipe_all", PermissionLevel.HIGH_RISK)
+        put("device_automation", PermissionLevel.CONFIRM_REQUIRED)
         put("file_write", PermissionLevel.HIGH_RISK)
         put("shell", PermissionLevel.HIGH_RISK)
     }

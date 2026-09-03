@@ -8,7 +8,9 @@ import com.jarvis.ai.core.EventType
 import com.jarvis.ai.data.model.Message
 import com.jarvis.ai.data.model.Sender
 import com.jarvis.ai.data.repository.JarvisRepository
+import com.jarvis.ai.intelligence.TaskRouter
 import com.jarvis.ai.memory.vector.MemoryType
+import com.jarvis.ai.memory.vector.MemoryWriteResult
 import com.jarvis.ai.memory.vector.VectorMemoryManager
 import com.jarvis.ai.memory.vector.WriteStatus
 import com.jarvis.ai.planning.AgentLimits
@@ -18,6 +20,8 @@ import com.jarvis.ai.provider.Capability
 import com.jarvis.ai.provider.RouteChunk
 import com.jarvis.ai.provider.LlmRouteRequest
 import com.jarvis.ai.provider.ProviderRouter
+import com.jarvis.ai.provider.SecretsSource
+import com.jarvis.ai.provider.SecretRedactor
 import com.jarvis.ai.security.AuditLog
 import com.jarvis.ai.security.PermissionGate
 import com.jarvis.ai.system.SystemAwareness
@@ -25,8 +29,11 @@ import com.jarvis.ai.vision.ScreenshotCapture
 import com.jarvis.ai.vision.VisionModule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Streamed orchestrator output consumed by the UI layer. */
 sealed class OrchestratorUpdate {
@@ -78,7 +85,7 @@ class MasterOrchestrator(
     private val systemToolHandler = SystemToolHandler(appContext)
 
     /** Secrets seam for the vision layer (backend-only credentials). */
-    internal lateinit var visionSecrets: com.jarvis.ai.provider.SecretsSource
+    internal var visionSecrets: SecretsSource? = null
 
     fun processRequest(
         input: String,
@@ -93,7 +100,7 @@ class MasterOrchestrator(
             // Fully-online policy: JARVIS ONLY answers through the remote uplink.
             // If the device is offline there is no local fallback engine — the
             // single, explicit availability message is surfaced instead.
-            val online = com.jarvis.ai.system.SystemAwareness(appContext).snapshot().online
+            val online = SystemAwareness(appContext).snapshot().online
             if (online == false) {
                 emit(OrchestratorUpdate.Delta(NOT_AVAILABLE_MESSAGE))
                 emit(completed(false, "offline", startedAt))
@@ -106,9 +113,9 @@ class MasterOrchestrator(
                 if (launch.success) {
                     // Parity with the gated tool pipeline: app-launch is LOW_RISK
                     // (no confirmation) but must still be recorded in the audit log.
-                    com.jarvis.ai.security.AuditLog.record(
+                    AuditLog.record(
                         "open_app",
-                        com.jarvis.ai.security.PermissionGate.decide("open_app", userConfirmedThisTurn),
+                        PermissionGate.decide("open_app", userConfirmedThisTurn),
                         input
                     )
                     EventBus.publish(EventType.DEVICE_ACTION, "open_app")
@@ -124,8 +131,8 @@ class MasterOrchestrator(
                 // CALCULATION / TIME_DATE intentionally have NO local offline path:
                 // under fully-online policy every answer comes from the remote uplink.
 
-                "MEMORY" -> {
-                    EventBus.publish(EventType.INTENT_DETECTED, "MEMORY")
+                Intent.MEMORY -> {
+                    EventBus.publish(EventType.INTENT_DETECTED, Intent.MEMORY)
                     memoryStored = handleMemory(classification, input, userConfirmedThisTurn)
                 }
 
@@ -137,46 +144,42 @@ class MasterOrchestrator(
                 // IntentClassifier.parseMessagingRequest(). Without this case these
                 // intents fell through to the `else` (CHAT) branch and were never
                 // executed — only replied to conversationally.
-                "SYSTEM_COMMAND", "SEND_SMS", "SEND_WHATSAPP", "MAKE_CALL" -> {
+                Intent.SYSTEM_COMMAND, Intent.SEND_SMS, Intent.SEND_WHATSAPP, Intent.MAKE_CALL -> {
                     EventBus.publish(EventType.INTENT_DETECTED, classification.intent)
                     handleSystemCommand(classification, input, userConfirmedThisTurn).forEach { update ->
                         emit(update)
                     }
                 }
 
-                "DEVICE_AUTOMATION" -> {
-                    EventBus.publish(EventType.INTENT_DETECTED, "DEVICE_AUTOMATION")
+                Intent.DEVICE_AUTOMATION -> {
+                    EventBus.publish(EventType.INTENT_DETECTED, Intent.DEVICE_AUTOMATION)
                     handleDeviceAutomation(input, userConfirmedThisTurn).forEach { update ->
                         emit(update)
                     }
                 }
 
-                "VISION_ANALYSIS" -> {
-                    EventBus.publish(EventType.INTENT_DETECTED, "VISION_ANALYSIS")
+                Intent.VISION_ANALYSIS -> {
+                    EventBus.publish(EventType.INTENT_DETECTED, Intent.VISION_ANALYSIS)
                     handleVisionAnalysis(input).forEach { update ->
                         emit(update)
                     }
                 }
 
                 else -> {
-                    EventBus.publish(EventType.INTENT_DETECTED, "CHAT")
+                    EventBus.publish(EventType.INTENT_DETECTED, Intent.CHAT)
                     // Context injection: recalled memories become part of the system prompt.
-                    val memoryContext = runCatching {
+                    val memoryContext = try {
                         vectorMemory.contextBlock(input)
-                    }.getOrDefault("")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "contextBlock failed: ${e.message}")
+                        ""
+                    }
                     // Persist notable user statements for future recall.
-                    if (looksLikeDurableFact(input)) {
-                        runCatching {
-                            val write = vectorMemory.remember(
-                                content = input,
-                                type = com.jarvis.ai.memory.vector.MemoryType.FACT,
-                                source = "conversation"
-                            )
-                            if (write.status == com.jarvis.ai.memory.vector.WriteStatus.STORED) {
-                                memoryStored = true
-                                EventBus.publish(EventType.MEMORY_UPDATED, "stored")
-                            }
-                        }
+                    if (looksLikeDurableFact(input)
+                        && rememberAsFact(input, "conversation")?.status == WriteStatus.STORED
+                    ) {
+                        memoryStored = true
+                        EventBus.publish(EventType.MEMORY_UPDATED, "stored")
                     }
 
                     val systemPrompt = buildString {
@@ -193,12 +196,12 @@ class MasterOrchestrator(
                     // every message reaches the offline/degraded fallback as empty input
                     // and is answered with "I did not quite catch that, sir."
                     val withCurrentInput = history + Message(sender = Sender.USER, text = input)
-                    val trimmedHistory = withCurrentInput.takeLast(MAX_HISTORY_MESSAGES)
+                    val trimmedHistory = trimToBudget(withCurrentInput)
 
                     providerRouter
                         .routeText(
                             LlmRouteRequest(
-                                capability = com.jarvis.ai.provider.Capability.CHAT,
+                                capability = Capability.CHAT,
                                 history = trimmedHistory,
                                 systemPrompt = systemPrompt,
                                 stream = true
@@ -206,10 +209,10 @@ class MasterOrchestrator(
                         )
                         .collect { chunk ->
                             when (chunk) {
-                                is com.jarvis.ai.provider.RouteChunk.Delta ->
+                                is RouteChunk.Delta ->
                                     emit(OrchestratorUpdate.Delta(chunk.text))
 
-                                is com.jarvis.ai.provider.RouteChunk.Finished -> {
+                                is RouteChunk.Finished -> {
                                     EventBus.publish(EventType.MODEL_SELECTED, chunk.report.metadata.provider)
                                     emit(
                                         OrchestratorUpdate.Completed(
@@ -229,7 +232,7 @@ class MasterOrchestrator(
         } catch (e: Exception) {
             emit(
                 OrchestratorUpdate.Delta(
-                    "An unexpected fault occurred, sir. ${com.jarvis.ai.provider.SecretRedactor.redact(e.message ?: "")}"
+                    "An unexpected fault occurred, sir. ${SecretRedactor.redact(e.message ?: "")}"
                 )
             )
             emit(completed(false, "error", startedAt))
@@ -241,8 +244,11 @@ class MasterOrchestrator(
      * vision-capable backend through [VisionAnalyzer]; the result streams back
      * like any other reply. Never exposed to direct provider calls from the UI.
      */
-    suspend fun analyzeImage(base64Image: String, mimeType: String, prompt: String): VisionAnalyzer.VisionResult =
-        VisionAnalyzer(providerRouter, visionSecrets).analyze(base64Image, mimeType, prompt)
+    suspend fun analyzeImage(base64Image: String, mimeType: String, prompt: String): VisionAnalyzer.VisionResult {
+        val secrets = visionSecrets
+            ?: throw IllegalStateException("Vision secrets not injected; JarvisRuntime must set visionSecrets before image analysis.")
+        return VisionAnalyzer(providerRouter, secrets).analyze(base64Image, mimeType, prompt)
+    }
 
     /** Emits memory-operation replies; returns true when something was stored. */
     private suspend fun kotlinx.coroutines.flow.FlowCollector<OrchestratorUpdate>.handleMemory(
@@ -253,38 +259,35 @@ class MasterOrchestrator(
         "store" -> {
             val fact = rawInput.removePrefix("remember").removePrefix("Remember").trim()
                 .ifBlank { rawInput }
-            val write = runCatching {
-                vectorMemory.remember(
-                    content = fact,
-                    type = com.jarvis.ai.memory.vector.MemoryType.FACT,
-                    source = "explicit-request"
-                )
-            }.getOrNull()
+            val write = rememberAsFact(fact, "explicit-request")
             val reply = when (write?.status) {
-                com.jarvis.ai.memory.vector.WriteStatus.STORED -> {
+                WriteStatus.STORED -> {
                     EventBus.publish(EventType.MEMORY_UPDATED, "stored")
                     "Committed to long-term memory, sir."
                 }
-                com.jarvis.ai.memory.vector.WriteStatus.DUPLICATE ->
+                WriteStatus.DUPLICATE ->
                     "Already in my memory banks, sir."
                 else -> "I could not store that memory, sir."
             }
             emit(OrchestratorUpdate.Delta(reply))
             emit(
                 OrchestratorUpdate.Completed(
-                    success = write?.status == com.jarvis.ai.memory.vector.WriteStatus.STORED,
+                    success = write?.status == WriteStatus.STORED,
                     provider = "vector-memory",
                     latencyMs = 0L,
-                    memoryStored = write?.status == com.jarvis.ai.memory.vector.WriteStatus.STORED
+                    memoryStored = write?.status == WriteStatus.STORED
                 )
             )
-            write?.status == com.jarvis.ai.memory.vector.WriteStatus.STORED
+            write?.status == WriteStatus.STORED
         }
 
         "recall", "query" -> {
-            val hits = runCatching {
+            val hits = try {
                 vectorMemory.recall(rawInput)
-            }.getOrDefault(emptyList())
+            } catch (e: Exception) {
+                Log.w(TAG, "memory recall failed: ${e.message}")
+                emptyList()
+            }
             val reply = if (hits.isEmpty()) {
                 "I hold no relevant memories on that subject yet, sir."
             } else {
@@ -298,9 +301,14 @@ class MasterOrchestrator(
         }
 
         else -> {
-            val decision = com.jarvis.ai.security.PermissionGate.decide("memory_wipe_all", userConfirmedThisTurn)
+            val decision = PermissionGate.decide("memory_wipe_all", userConfirmedThisTurn)
             if (decision.allowedWithoutConfirmation) {
-                val wiped = runCatching { vectorMemory.wipeAll() }.getOrDefault(-1)
+                val wiped = try {
+                    vectorMemory.wipeAll()
+                } catch (e: Exception) {
+                    Log.w(TAG, "memory wipe failed: ${e.message}")
+                    -1
+                }
                 emit(
                     OrchestratorUpdate.Delta(
                         if (wiped >= 0) "All memories erased, sir."
@@ -383,39 +391,66 @@ class MasterOrchestrator(
         userConfirmed: Boolean
     ): List<OrchestratorUpdate> = withContext(Dispatchers.IO) {
         val updates = mutableListOf<OrchestratorUpdate>()
-        
-        agentCore?.executeTask(rawInput)
-        
-        val stateFlow = agentCore?.getStateFlow()
-        if (stateFlow != null) {
-            var lastState: AgentCore.AgentState? = null
-            stateFlow.collect { state ->
+
+        // Gate automation through the same permission policy as tools: it can
+        // alter the device, so it must not bypass confirmation like it used to.
+        val gate = PermissionGate.decide(DEVICE_AUTOMATION_TOOL, userConfirmed)
+        AuditLog.record(DEVICE_AUTOMATION_TOOL, gate, rawInput)
+        when {
+            gate.denied -> {
+                updates += OrchestratorUpdate.Delta(gate.message)
+                updates += completed(false, "agent-core", System.currentTimeMillis())
+                return@withContext updates
+            }
+            gate.requiresConfirmation -> {
+                updates += OrchestratorUpdate.Confirmation(DEVICE_AUTOMATION_TOOL, gate.message)
+                return@withContext updates
+            }
+        }
+
+        val core = agentCore
+        if (core == null) {
+            updates += OrchestratorUpdate.Delta("Device automation is not available right now, sir.")
+            updates += completed(false, "agent-core", System.currentTimeMillis())
+            return@withContext updates
+        }
+
+        core.executeTask(rawInput)
+
+        var lastState: AgentCore.AgentState? = null
+
+        // Bounded wait for a terminal state; a hot MutableStateFlow.collect never
+        // completes on its own, so without a timeout a stuck agent is awaited
+        // forever. first{} cancels the flow the moment a terminal state arrives.
+        val completed = withTimeoutOrNull(AUTOMATION_TIMEOUT_MS) {
+            core.getStateFlow().first { state ->
                 if (state != lastState) {
                     when (state) {
-                        is AgentCore.AgentState.Running -> {
+                        is AgentCore.AgentState.Running ->
                             updates += OrchestratorUpdate.Delta(state.step)
-                        }
+
                         is AgentCore.AgentState.Done -> {
                             updates += OrchestratorUpdate.Delta(state.result)
                             updates += completed(true, "agent-core", System.currentTimeMillis())
                         }
+
                         is AgentCore.AgentState.Error -> {
                             updates += OrchestratorUpdate.Delta("Automation error: ${state.message}")
                             updates += completed(false, "agent-core", System.currentTimeMillis())
                         }
+
                         else -> {}
                     }
                     lastState = state
-                    if (state is AgentCore.AgentState.Done || state is AgentCore.AgentState.Error) {
-                        return@collect
-                    }
                 }
+                state is AgentCore.AgentState.Done || state is AgentCore.AgentState.Error
             }
+            true
         }
-        
-        if (updates.isEmpty()) {
-            updates += OrchestratorUpdate.Delta("Device automation executed, sir.")
-            updates += completed(true, "agent-core", System.currentTimeMillis())
+
+        if (completed != true && updates.none { it is OrchestratorUpdate.Completed }) {
+            updates += OrchestratorUpdate.Delta("Device automation timed out, sir.")
+            updates += completed(false, "agent-core", System.currentTimeMillis())
         }
         return@withContext updates
     }
@@ -424,7 +459,7 @@ class MasterOrchestrator(
         val updates = mutableListOf<OrchestratorUpdate>()
         
         // Capture screenshot
-        val screenshotCapture = com.jarvis.ai.vision.ScreenshotCapture.getInstance(appContext)
+        val screenshotCapture = ScreenshotCapture.getInstance(appContext)
         val bitmap = try {
             screenshotCapture.capture()
         } catch (e: Exception) {
@@ -438,7 +473,7 @@ class MasterOrchestrator(
         }
         
         // Run OCR on the screenshot
-        val visionModule = com.jarvis.ai.vision.VisionModule.getInstance(appContext)
+        val visionModule = VisionModule.getInstance(appContext)
         val ocrResult = try {
             visionModule.extractStructured(bitmap)
         } catch (e: Exception) {
@@ -469,11 +504,71 @@ class MasterOrchestrator(
             t.startsWith("i work ")
     }
 
+    /**
+     * Single storage seam shared by the explicit MEMORY intent and the ambient
+     * CHAT-path auto-store, so both go through the same remember call, dedupe
+     * policy and error logging. Returns the write result or null on failure.
+     */
+    private suspend fun rememberAsFact(content: String, source: String): MemoryWriteResult? = try {
+        vectorMemory.remember(
+            content = content,
+            type = MemoryType.FACT,
+            source = source
+        )
+    } catch (e: Exception) {
+        Log.w(TAG, "memory.remember($source) failed: ${e.message}")
+        null
+    }
+
+    /**
+     * Keeps the active turn always present while budgeting the history to a
+     * rough token ceiling (chars ≈ 4 tokens). Drops the oldest messages once
+     * the budget is exceeded — a token-aware successor to the flat 16-message
+     * cutoff that long replies previously blew straight through.
+     */
+    private fun trimToBudget(messages: List<Message>): List<Message> {
+        if (messages.size <= MAX_HISTORY_MESSAGES &&
+            messages.sumOf { it.text.length } <= MAX_HISTORY_CHARS
+        ) {
+            return messages
+        }
+        val budgeted = ArrayDeque<Message>()
+        var used = 0
+        for (msg in messages.asReversed()) {
+            val cost = msg.text.length
+            if (budgeted.isNotEmpty() && used + cost > MAX_HISTORY_CHARS) break
+            budgeted.addFirst(msg)
+            used += cost
+        }
+        return budgeted.toList().takeLast(MAX_HISTORY_MESSAGES)
+    }
+
     private fun completed(success: Boolean, provider: String, startedAt: Long) =
         OrchestratorUpdate.Completed(success, provider, System.currentTimeMillis() - startedAt)
 
     companion object {
+        private const val TAG = "JarvisOrchestrator"
+
+        /** Intent category names emitted by [IntentClassifier] and dispatched here. */
+        object Intent {
+            const val CHAT = "CHAT"
+            const val MEMORY = "MEMORY"
+            const val SYSTEM_COMMAND = "SYSTEM_COMMAND"
+            const val SEND_SMS = "SEND_SMS"
+            const val SEND_WHATSAPP = "SEND_WHATSAPP"
+            const val MAKE_CALL = "MAKE_CALL"
+            const val DEVICE_AUTOMATION = "DEVICE_AUTOMATION"
+            const val VISION_ANALYSIS = "VISION_ANALYSIS"
+        }
+
+        /** Fallback message-count cap for chat history (upper bound on the budget). */
         private const val MAX_HISTORY_MESSAGES = 16
+
+        /** Rough token budget for chat history: chars ≈ 4×tokens (~16k tokens). */
+        private const val MAX_HISTORY_CHARS = 64_000
+
+        /** Tool name used to gate device automation through PermissionGate. */
+        const val DEVICE_AUTOMATION_TOOL = "device_automation"
 
         /** Timeout guarding automation state-collection so a stuck agent is never awaited forever. */
         private const val AUTOMATION_TIMEOUT_MS = 15_000L
