@@ -176,7 +176,8 @@ class PineconeVectorStore(
         if (dims != null && record.embedding.isNotEmpty() && record.embedding.size != dims) {
             throw VectorStoreException(
                 null, FailureCategory.MALFORMED_RESPONSE,
-                "pinecone: embedding dim ${record.embedding.size} != index dim $dims"
+                "pinecone: embedding dimension mismatch " +
+                    "(record dim ${record.embedding.size} != index dim $dims)"
             )
         }
         val body = json.encodeToString(

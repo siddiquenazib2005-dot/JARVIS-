@@ -129,8 +129,10 @@ class ModelRoutingTest {
 
     @Test
     fun `coding routes to specialised model on groq`() {
+        // Pinned to the production table (ModelRouting.groq.CODING): the
+        // qwen3.8-27b entry intentionally replaced the older coder model.
         assertEquals(
-            "qwen-2.5-coder-32b",
+            "qwen/qwen3.8-27b",
             ModelRouting.resolveModel("groq", Capability.CODING, "llama-3.3-70b-versatile")
         )
     }
@@ -147,8 +149,10 @@ class ModelRoutingTest {
 
     @Test
     fun `chat uses balanced default on groq`() {
+        // Pinned to the production table (ModelRouting.groq.CHAT): groq's
+        // balanced default is gpt-oss-120b; the llama default moved off-table.
         assertEquals(
-            "llama-3.3-70b-versatile",
+            "openai/gpt-oss-120b",
             ModelRouting.resolveModel("groq", Capability.CHAT, "llama-3.3-70b-versatile")
         )
     }

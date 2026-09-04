@@ -29,6 +29,7 @@ import com.jarvis.ai.service.AudioLevelEngine
 import com.jarvis.ai.service.SpeechRecognitionManager
 import com.jarvis.ai.service.SentenceParser
 import com.jarvis.ai.service.TtsEngine
+import com.jarvis.ai.service.WakeWordDetector
 import com.jarvis.ai.system.SystemAwareness
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -81,10 +82,22 @@ class JarvisViewModel(
     private var handsFreeVoicing = false
     /** Consecutive idle restarts (no speech detected) before hands-free backs off. */
     private var handsFreeIdleRestarts = 0
+    /** Consecutive wake-word misses before the gate stops re-arming the mic. */
+    private var wakeWordMissCount = 0
 
     private val _handsFreeActive = MutableStateFlow(false)
     /** Hands-free state exposed to the UI (mic button + settings switch). */
     val handsFreeActive: StateFlow<Boolean> = _handsFreeActive.asStateFlow()
+
+    /**
+     * Wake-word gate for hands-free mode. When enabled, an armed mic only
+     * acts on transcripts that address the assistant ("jarvis, …"); when
+     * disabled every final transcript is executed (legacy behaviour).
+     * Purely in-memory like the other session toggles; defaults to OFF so
+     * existing push-to-talk users see zero behaviour change.
+     */
+    private val _wakeWordEnabled = MutableStateFlow(false)
+    val wakeWordEnabled: StateFlow<Boolean> = _wakeWordEnabled.asStateFlow()
 
     private val PROVIDER_LABELS = mapOf(
         "GEMINI_API_KEY" to "Gemini",
@@ -142,6 +155,8 @@ class JarvisViewModel(
             runtime.appForeground.collect { foreground ->
                 if (!foreground && listening) endListening()
                 if (foreground && _handsFreeActive.value && !listening && !_uiState.value.isLoading) {
+                    // Wake-word sessions re-arm silently — the mic is armed but
+                    // waiting for the name, so there is nothing audible to miss.
                     rearmHandsFreeListening()
                 }
             }
@@ -497,6 +512,7 @@ class JarvisViewModel(
         // text into the next request's first chunk.
         sentenceParser.clear()
         handsFreeVoicing = false
+        wakeWordMissCount = 0
         tts.stop()
         _uiState.update { s ->
             s.copy(
@@ -607,26 +623,7 @@ class JarvisViewModel(
         _uiState.update { it.copy(isListening = true, notice = null) }
         val began = stt.start(
             onPartial = { partial -> showListeningDraft(partial) },
-            onFinal = { final ->
-                if (_uiState.value.isSpeaking) {
-                    stopGeneration()
-                }
-                endListening()
-                val transcript = final.trim()
-                when {
-                    // Silence in hands-free mode: quietly re-arm instead of nagging.
-                    transcript.isEmpty() && _handsFreeActive.value -> rearmHandsFreeListening()
-                    // If a previous generation is still in flight, sending now would be
-                    // silently dropped by dispatchToOrchestrator's isLoading guard. Give
-                    // the user explicit feedback instead of losing their spoken input.
-                    transcript.isNotEmpty() && _uiState.value.isLoading ->
-                        setNotice("Finishing that reply, sir. Say it again once it's done.")
-                    else -> {
-                        handsFreeIdleRestarts = 0
-                        send(transcript)
-                    }
-                }
-            },
+            onFinal = { final -> handleFinalTranscript(final) },
             onError = { code ->
                 endListening()
                 when (code) {
@@ -658,6 +655,73 @@ class JarvisViewModel(
         )
         if (!began) endListening()
         return began
+    }
+
+    /**
+     * Wake-word mode: armed mic only acts on transcripts that address the
+     * assistant. Idle sessions (pure silence) still re-arm quietly; noise
+     * without the name re-arms once, then the mode backs off so an empty
+     * room cannot drain the battery.
+     */
+    fun setWakeWordEnabled(enabled: Boolean) {
+        _wakeWordEnabled.value = enabled
+    }
+
+    /**
+     * Shared sink for every finalized recognition result (push-to-talk,
+     * hands-free and wake-word sessions all land here).
+     */
+    private fun handleFinalTranscript(final: String) {
+        if (_uiState.value.isSpeaking) {
+            stopGeneration()
+        }
+        endListening()
+        val transcript = final.trim()
+        when {
+            // Silence in hands-free mode: quietly re-arm instead of nagging.
+            transcript.isEmpty() && _handsFreeActive.value -> rearmHandsFreeListening()
+            // If a previous generation is still in flight, sending now would be
+            // silently dropped by dispatchToOrchestrator's isLoading guard. Give
+            // the user explicit feedback instead of losing their spoken input.
+            transcript.isNotEmpty() && _uiState.value.isLoading ->
+                setNotice("Finishing that reply, sir. Say it again once it's done.")
+            // Wake-word gate: in gated hands-free sessions a transcript without
+            // the name is ignored (re-arm and keep listening). Push-to-talk
+            // sessions are never gated — the user is already addressing the mic.
+            transcript.isNotEmpty() &&
+                _handsFreeActive.value &&
+                _wakeWordEnabled.value &&
+                !WakeWordDetector.containsWakeWord(transcript) -> {
+                wakeWordMissCount++
+                if (wakeWordMissCount >= WAKE_WORD_MAX_MISSES) {
+                    wakeWordMissCount = 0
+                    _handsFreeActive.value = false
+                    setNotice("Standing by, sir. Tap the microphone when you need me again.")
+                } else {
+                    rearmHandsFreeListening()
+                }
+            }
+            else -> {
+                handsFreeIdleRestarts = 0
+                wakeWordMissCount = 0
+                // Strip the address prefix ("jarvis, what's the time" → "what's
+                // the time") so the orchestrator never sees its own name.
+                val command = if (_handsFreeActive.value) {
+                    // Live hands-free session: a bare "jarvis" is the user
+                    // checking the wake link — re-arm quietly instead of
+                    // dropping the session.
+                    WakeWordDetector.stripWakeWord(transcript) ?: run {
+                        rearmHandsFreeListening()
+                        return
+                    }
+                } else {
+                    // Push-to-talk: never lose an utterance; keep the raw
+                    // transcript when no wake word was spoken.
+                    WakeWordDetector.stripWakeWord(transcript) ?: transcript
+                }
+                send(command)
+            }
+        }
     }
 
     /** Enables/disables hands-free (continuous conversation) mode. */
@@ -861,6 +925,8 @@ class JarvisViewModel(
         private const val PROACTIVE_POLL_MS = 60_000L
         private const val HANDS_FREE_REARM_DELAY_MS = 1_200L
         private const val HANDS_FREE_MAX_IDLE_RESTARTS = 3
+        /** Wake-word misses tolerated before hands-free backs off. */
+        private const val WAKE_WORD_MAX_MISSES = 2
         private const val DEFAULT_VISION_PROMPT = "Describe what you see concisely."
         private const val GREETING_MARK = "\u200B" // zero-width: marks the greeting bubble
         private const val STANDBY_LINE = "At your service, sir."

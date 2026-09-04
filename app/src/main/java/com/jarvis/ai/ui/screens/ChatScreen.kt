@@ -650,6 +650,7 @@ private fun SettingsDialog(
 ) {
     var health = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.jarvis.ai.health.HealthReport?>(null) }
     var savedKeys by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(viewModel.configuredProviders().toSet()) }
+    val wakeWordEnabled by viewModel.wakeWordEnabled.collectAsState()
     LaunchedEffect(Unit) {
         health.value = runCatching { viewModel.healthSnapshot() }.getOrNull()
     }
@@ -709,6 +710,25 @@ private fun SettingsDialog(
                     Switch(
                         checked = handsFreeActive,
                         onCheckedChange = { onHandsFreeChange() }
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Wake word", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "In hands-free, only \"Jarvis …\" commands are acted on",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary
+                        )
+                    }
+                    Switch(
+                        checked = wakeWordEnabled,
+                        onCheckedChange = { viewModel.setWakeWordEnabled(it) }
                     )
                 }
 

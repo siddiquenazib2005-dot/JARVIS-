@@ -126,6 +126,8 @@ object SecretRedactor {
         Regex("csk-[A-Za-z0-9]+"),
         Regex("tvly-[A-Za-z0-9\\-]+"),
         Regex("pcsk_[A-Za-z0-9_\\-]+"),
+        // Anthropic OAuth access tokens (Claude Code style): "AQ.Ab8RNfm..."
+        Regex("AQ\\.?[A-Za-z0-9_\\-]{4,}"),
         // JWTs (Qdrant cluster keys etc.) — three base64url segments.
         Regex("eyJ[A-Za-z0-9_\\-]+\\.eyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+"),
         Regex("Bearer\\s+[A-Za-z0-9._\\-]+"),

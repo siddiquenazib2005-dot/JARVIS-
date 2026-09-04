@@ -23,14 +23,20 @@ class PermissionGateTest {
     }
 
     @Test
-    fun `open app requires confirmation first`() {
-        val blocked = PermissionGate.decide("open_app")
-        assertTrue(blocked.requiresConfirmation)
-        assertFalse(blocked.allowedWithoutConfirmation)
+    fun `open app is LOW_RISK (fast-path parity, no confirmation)`() {
+        // Production contract (MasterOrchestrator fast-path): explicit
+        // "open <app>" launches instantly. open_app/open_settings are
+        // LOW_RISK on purpose — the permission gate records them in the
+        // audit log but never demands a confirmation round-trip.
+        val d = PermissionGate.decide("open_app")
+        assertEquals(PermissionLevel.LOW_RISK, d.level)
+        assertTrue(d.allowedWithoutConfirmation)
+        assertFalse(d.requiresConfirmation)
+        assertFalse(d.denied)
 
-        val allowed = PermissionGate.decide("open_app", userConfirmedThisTurn = true)
-        assertTrue(allowed.allowedWithoutConfirmation)
-        assertFalse(allowed.denied)
+        val settings = PermissionGate.decide("open_settings")
+        assertEquals(PermissionLevel.LOW_RISK, settings.level)
+        assertTrue(settings.allowedWithoutConfirmation)
     }
 
     @Test

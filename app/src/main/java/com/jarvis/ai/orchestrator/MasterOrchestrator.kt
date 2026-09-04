@@ -7,6 +7,7 @@ import com.jarvis.ai.core.EventBus
 import com.jarvis.ai.core.EventType
 import com.jarvis.ai.data.model.Message
 import com.jarvis.ai.data.model.Sender
+import com.jarvis.ai.accessibility.JarvisAccessibilityService
 import com.jarvis.ai.data.repository.JarvisRepository
 import com.jarvis.ai.intelligence.TaskRouter
 import com.jarvis.ai.memory.vector.MemoryType
@@ -457,18 +458,35 @@ class MasterOrchestrator(
 
     private suspend fun handleVisionAnalysis(input: String): List<OrchestratorUpdate> = withContext(Dispatchers.IO) {
         val updates = mutableListOf<OrchestratorUpdate>()
-        
-        // Capture screenshot
+
+        // Primary path: consent-free screen text via the accessibility tree.
+        // (MediaProjection screenshots need a user consent dialog wired to an
+        // activity result AND, on API 34+, a live mediaProjection foreground
+        // service — without either, capture() can never succeed.)
+        if (JarvisAccessibilityService.isConnected()) {
+            val screenText = JarvisAccessibilityService.activeWindowText()
+            if (screenText.isNotEmpty()) {
+                val description = "Screen content:\n${screenText.joinToString("\n")}"
+                updates += OrchestratorUpdate.Delta(description)
+                updates += completed(true, "vision-a11y", System.currentTimeMillis())
+                return@withContext updates
+            }
+        }
+
+        // Fallback: OCR screenshot path (works only when a MediaProjection
+        // session was previously granted via ScreenshotCapture.startCapture).
         val screenshotCapture = ScreenshotCapture.getInstance(appContext)
         val bitmap = try {
             screenshotCapture.capture()
         } catch (e: Exception) {
-            updates += OrchestratorUpdate.Delta("Failed to capture screen: ${e.message}")
+            updates += OrchestratorUpdate.Delta("Failed to capture screen: ${SecretRedactor.redact(e.message)}")
             return@withContext updates
         }
         
         if (bitmap == null) {
-            updates += OrchestratorUpdate.Delta("Could not capture screen. Make sure screen capture permission is granted.")
+            updates += OrchestratorUpdate.Delta(
+                "Screen reading unavailable, sir. Enable JARVIS Accessibility in Settings, or grant screen-capture permission."
+            )
             return@withContext updates
         }
         
@@ -477,7 +495,7 @@ class MasterOrchestrator(
         val ocrResult = try {
             visionModule.extractStructured(bitmap)
         } catch (e: Exception) {
-            updates += OrchestratorUpdate.Delta("OCR failed: ${e.message}")
+            updates += OrchestratorUpdate.Delta("OCR failed: ${SecretRedactor.redact(e.message)}")
             return@withContext updates
         }
         

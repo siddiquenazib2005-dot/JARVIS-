@@ -62,6 +62,39 @@ class JarvisAccessibilityService : AccessibilityService() {
             ) ?: return false
             return enabled.split(":").any { it.equals("$expected", ignoreCase = true) }
         }
+
+        /**
+         * Best-effort snapshot of the active window's visible text, read from
+         * the accessibility tree (BFS, depth-bounded by [maxNodes]).
+         *
+         * Consent-free (the user already granted Accessibility) and available
+         * on every supported Android version — unlike MediaProjection
+         * screenshots, which on API 34+ additionally require a live
+         * mediaProjection foreground service. Returns an empty list when the
+         * service is not connected or the window tree is unavailable.
+         */
+        fun activeWindowText(maxNodes: Int = 400): List<String> {
+            val service = instance
+                ?.takeIf { it.stateFlow.value == A11yServiceState.AVAILABLE }
+                ?: return emptyList()
+            val root = runCatching { service.rootInActiveWindow }.getOrNull() ?: return emptyList()
+            val out = ArrayList<String>()
+            val queue = ArrayDeque<AccessibilityNodeInfo>()
+            queue.add(root)
+            var visited = 0
+            while (queue.isNotEmpty() && visited < maxNodes) {
+                val node = queue.removeFirst()
+                visited++
+                val text = runCatching { node.text?.toString()?.trim() }.getOrNull()
+                if (!text.isNullOrEmpty()) out.add(text)
+                runCatching {
+                    for (i in 0 until node.childCount) {
+                        node.getChild(i)?.let { queue.add(it) }
+                    }
+                }.getOrNull() ?: continue
+            }
+            return out.distinct()
+        }
     }
 
     override fun onServiceConnected() {

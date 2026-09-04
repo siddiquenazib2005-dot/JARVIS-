@@ -201,10 +201,27 @@ object NodeResolver {
             if (f >= 0.85) return@runCatching 55 to "fuzzy-desc"
             if (f >= 0.6) return@runCatching 45 to "fuzzy-desc-weak"
         }
-        // Structural fallback: interactive node with any text but no direct match.
-        if ((text != null || desc != null) && isInteractiveClass(node)) return@runCatching 20 to "structural"
+        // Structural fallback: an interactive node is only a weak candidate when
+        // the target shares at least one normalized token with its text/desc.
+        // Requiring an overlap keeps the best-effort fallback useful for real
+        // targets ("profile" for a node whose text is "My Profile") while refusing
+        // completely unrelated queries so callers can rely on NotFound.
+        val candidateText = text ?: desc
+        if (candidateText != null && isInteractiveClass(node) &&
+            sharesToken(needle, candidateText)
+        ) return@runCatching 20 to "structural"
         0 to ""
     }.getOrDefault(0 to "")
+
+    /** True when two strings share at least one significant word token. */
+    private fun sharesToken(a: String, b: String): Boolean {
+        val tokens: (String) -> Set<String> = { s ->
+            s.split(Regex("\\s+")).filter { it.length > 1 }.toSet()
+        }
+        val aT = tokens(a)
+        val bT = tokens(b)
+        return aT.any { it in bT } || bT.any { it in aT }
+    }
 
     private fun isInteractiveClass(node: AccessibilityNodeInfo): Boolean = runCatching {
         val c = node.className?.toString()?.lowercase() ?: return@runCatching false

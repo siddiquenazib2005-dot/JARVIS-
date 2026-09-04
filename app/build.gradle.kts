@@ -99,5 +99,12 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation("org.robolectric:robolectric:4.12.2")
+    testImplementation("org.robolectric:robolectric:4.14.1") {
+        // NOTE: the uber jar stays on the classpath on purpose. Its JNI lib
+        // for linux-aarch_64 does not exist, so installing the provider would
+        // crash on ARM64 hosts — but the tests below opt out explicitly via
+        // @ConscryptMode(Mode.OFF), which makes Robolectric skip the install
+        // entirely while keeping the classes resolvable.
+        isTransitive = true
+    }
 }
