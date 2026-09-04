@@ -14,6 +14,9 @@ import com.jarvis.ai.provider.SecretsSource
 import java.io.File
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Single composition root for the JARVIS backend core.
@@ -31,6 +34,15 @@ class JarvisRuntime private constructor(context: Context) {
 
     val secureStore: SecureStore = SecureStore(context)
     private val appContext: Context = context.applicationContext
+
+    /** Foreground marker for lifecycle-aware features (hands-free voice, polling). */
+    @Volatile
+    var isAppForeground: Boolean = false
+        private set
+
+    private val _appForeground = MutableStateFlow(false)
+    /** Foreground stream shared by runtime consumers (ViewModel, services). */
+    val appForeground: StateFlow<Boolean> = _appForeground.asStateFlow()
 
     @Volatile
     private var migrationDone: Boolean = false
@@ -104,6 +116,12 @@ class JarvisRuntime private constructor(context: Context) {
             appContext,
             android.Manifest.permission.RECORD_AUDIO
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /** Called from the Activity lifecycle; drives [appForeground]. */
+    fun setAppForeground(foreground: Boolean) {
+        isAppForeground = foreground
+        _appForeground.value = foreground
+    }
 
     val vectorMemory: VectorMemoryManager by lazy {
         VectorMemoryManager(

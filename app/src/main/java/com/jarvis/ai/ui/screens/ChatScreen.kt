@@ -113,6 +113,7 @@ fun ChatScreen(
     var input by rememberSaveable { mutableStateOf("") }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var ttsMuted by rememberSaveable { mutableStateOf(viewModel.ttsMuted) }
+    val handsFreeActive by viewModel.handsFreeActive.collectAsState()
 
     val context = LocalContext.current
     val micPermission = rememberLauncherForActivityResult(
@@ -275,8 +276,16 @@ fun ChatScreen(
                         onStop = viewModel::stopGeneration,
                         isLoading = state.isLoading,
                         isListening = state.isListening,
-                        onMicPressed = ::beginVoiceInput,
-                        onMicReleased = viewModel::stopVoiceInput
+                        handsFreeActive = handsFreeActive,
+                        // In hands-free mode a tap on the mic disengages it;
+                        // push-to-talk keeps its press-and-hold semantics.
+                        onMicPressed = {
+                            if (handsFreeActive) viewModel.toggleHandsFreeMode()
+                            else beginVoiceInput()
+                        },
+                        onMicReleased = {
+                            if (!handsFreeActive) viewModel.stopVoiceInput()
+                        }
                     )
                 }
             }
@@ -291,6 +300,8 @@ fun ChatScreen(
                 ttsMuted = it
                 viewModel.setTtsMuted(it)
             },
+            handsFreeActive = handsFreeActive,
+            onHandsFreeChange = { viewModel.toggleHandsFreeMode() },
             onDismiss = { showSettings = false }
         )
     }
@@ -633,6 +644,8 @@ private fun SettingsDialog(
     viewModel: JarvisViewModel,
     ttsMuted: Boolean,
     onTtsMutedChange: (Boolean) -> Unit,
+    handsFreeActive: Boolean,
+    onHandsFreeChange: () -> Unit,
     onDismiss: () -> Unit
 ) {
     var health = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.jarvis.ai.health.HealthReport?>(null) }
@@ -677,6 +690,25 @@ private fun SettingsDialog(
                     Switch(
                         checked = !ttsMuted,
                         onCheckedChange = { enabled -> onTtsMutedChange(!enabled) }
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Hands-free mode", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Continuous conversation — the mic re-arms after each reply",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary
+                        )
+                    }
+                    Switch(
+                        checked = handsFreeActive,
+                        onCheckedChange = { onHandsFreeChange() }
                     )
                 }
 

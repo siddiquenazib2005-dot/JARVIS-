@@ -11,14 +11,27 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import com.jarvis.ai.core.JarvisRuntime
 import com.jarvis.ai.ui.screens.ChatScreen
 import com.jarvis.ai.ui.theme.JarvisTheme
 
 class MainActivity : ComponentActivity() {
 
+    private val runtime by lazy { JarvisRuntime.get(applicationContext) }
+
     private val permissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ -> }
+
+    override fun onStart() {
+        super.onStart()
+        runtime.setAppForeground(true)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        runtime.setAppForeground(false)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(

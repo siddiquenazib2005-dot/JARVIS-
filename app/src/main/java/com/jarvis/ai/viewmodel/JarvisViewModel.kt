@@ -77,6 +77,14 @@ class JarvisViewModel(
     // flow: if the user releases while the system permission dialog is up, we must
     // not start a silent listening session that would yield "I did not catch that."
     private var micHeld = false
+    /** True while a reply's sentences are being voiced via the TTS queue manager. */
+    private var handsFreeVoicing = false
+    /** Consecutive idle restarts (no speech detected) before hands-free backs off. */
+    private var handsFreeIdleRestarts = 0
+
+    private val _handsFreeActive = MutableStateFlow(false)
+    /** Hands-free state exposed to the UI (mic button + settings switch). */
+    val handsFreeActive: StateFlow<Boolean> = _handsFreeActive.asStateFlow()
 
     private val PROVIDER_LABELS = mapOf(
         "GEMINI_API_KEY" to "Gemini",
@@ -128,6 +136,17 @@ class JarvisViewModel(
             }
         }
 
+        // Lifecycle-aware hands-free: release the mic when the app goes to the
+        // background (privacy + battery), re-arm it when the user returns.
+        viewModelScope.launch {
+            runtime.appForeground.collect { foreground ->
+                if (!foreground && listening) endListening()
+                if (foreground && _handsFreeActive.value && !listening && !_uiState.value.isLoading) {
+                    rearmHandsFreeListening()
+                }
+            }
+        }
+
         // Greeting is spoken ONCE per session/period (PresenceGate dedups);
         // recompositions never reach here.
         viewModelScope.launch {
@@ -168,8 +187,13 @@ class JarvisViewModel(
                         // Without clearing, the finished utterance is re-played in an
                         // infinite loop every 200ms once TTS finishes.
                         ttsQueue.value = null
+                        handsFreeVoicing = true
                         tts.speak(toSpeak)
                     }
+                } else if (handsFreeVoicing && !tts.isSpeaking.value) {
+                    // The reply has been fully voiced and the queue is drained.
+                    handsFreeVoicing = false
+                    rearmHandsFreeListening()
                 }
                 // Wait for TTS to finish; poll isSpeaking since we have no
                 // direct callback beyond the existing StateFlow.
@@ -343,6 +367,9 @@ class JarvisViewModel(
             } finally {
                 _uiState.update { it.copy(isLoading = false) }
                 persistReplyIfAny(sessionId, replyId)
+                // Hands-free: the reply is fully generated (or cancelled); once any
+                // remaining queued sentences have been voiced, the mic re-arms.
+                markHandsFreeReplyDelivered()
             }
         }
     }
@@ -469,6 +496,7 @@ class JarvisViewModel(
         // Drop any half-buffered sentence so a cancelled reply does not leak
         // text into the next request's first chunk.
         sentenceParser.clear()
+        handsFreeVoicing = false
         tts.stop()
         _uiState.update { s ->
             s.copy(
@@ -562,6 +590,14 @@ class JarvisViewModel(
             setNotice("Microphone access was denied, sir. Grant RECORD_AUDIO to proceed.")
             return false
         }
+        return beginRecognition()
+    }
+
+    /**
+     * Opens a recognition session. Callers must have validated availability,
+     * permission and mic intent — this owns session activation + STT wiring.
+     */
+    private fun beginRecognition(): Boolean {
         // Let SpeechRecognizer own the microphone exclusively: no second
         // AudioRecord (orb level already pulses via the UI). VoiceSessionGate
         // signals other listeners to back off. Two competing listeners would
@@ -577,27 +613,104 @@ class JarvisViewModel(
                 }
                 endListening()
                 val transcript = final.trim()
-                // If a previous generation is still in flight, sending now would be
-                // silently dropped by dispatchToOrchestrator's isLoading guard. Give
-                // the user explicit feedback instead of losing their spoken input.
-                if (transcript.isNotEmpty() && _uiState.value.isLoading) {
-                    setNotice("Finishing that reply, sir. Say it again once it's done.")
-                } else {
-                    send(transcript)
+                when {
+                    // Silence in hands-free mode: quietly re-arm instead of nagging.
+                    transcript.isEmpty() && _handsFreeActive.value -> rearmHandsFreeListening()
+                    // If a previous generation is still in flight, sending now would be
+                    // silently dropped by dispatchToOrchestrator's isLoading guard. Give
+                    // the user explicit feedback instead of losing their spoken input.
+                    transcript.isNotEmpty() && _uiState.value.isLoading ->
+                        setNotice("Finishing that reply, sir. Say it again once it's done.")
+                    else -> {
+                        handsFreeIdleRestarts = 0
+                        send(transcript)
+                    }
                 }
             },
             onError = { code ->
                 endListening()
                 when (code) {
                     android.speech.SpeechRecognizer.ERROR_NO_MATCH,
-                    android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT ->
-                        setNotice("I did not catch that, sir. Hold the microphone and speak.")
-                    else -> setNotice("Voice uplink fault (code $code), sir.")
+                    android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                        // Idle session. In hands-free mode tolerate a couple of
+                        // restarts, then back off to spare the battery.
+                        if (_handsFreeActive.value) {
+                            handsFreeIdleRestarts++
+                            if (handsFreeIdleRestarts >= HANDS_FREE_MAX_IDLE_RESTARTS) {
+                                _handsFreeActive.value = false
+                                handsFreeIdleRestarts = 0
+                                setNotice("Standing by, sir. Tap the microphone when you need me again.")
+                            } else {
+                                rearmHandsFreeListening()
+                            }
+                        } else {
+                            setNotice("I did not catch that, sir. Hold the microphone and speak.")
+                        }
+                    }
+                    else -> {
+                        // Fatal recognizer faults end hands-free mode; push-to-talk
+                        // just reports the failure.
+                        if (_handsFreeActive.value) _handsFreeActive.value = false
+                        setNotice("Voice uplink fault (code $code), sir.")
+                    }
                 }
             }
         )
         if (!began) endListening()
         return began
+    }
+
+    /** Enables/disables hands-free (continuous conversation) mode. */
+    fun toggleHandsFreeMode() {
+        if (_handsFreeActive.value) {
+            _handsFreeActive.value = false
+            handsFreeIdleRestarts = 0
+            if (listening) stopVoiceInput()
+            setNotice("Hands-free disengaged, sir.")
+        } else {
+            if (!runtime.hasRecordAudioPermission()) {
+                setNotice("Microphone access was denied, sir. Grant RECORD_AUDIO to proceed.")
+                return
+            }
+            if (!stt.isAvailable) {
+                setNotice("Voice input is not available on this device, sir.")
+                return
+            }
+            if (_uiState.value.isLoading) {
+                setNotice("One moment, sir — still finishing the previous request.")
+                return
+            }
+            _handsFreeActive.value = true
+            handsFreeIdleRestarts = 0
+            micHeld = true
+            beginRecognition()
+        }
+    }
+
+    /**
+     * Re-arms the microphone after a hands-free reply has been fully delivered.
+     * Bail-outs (backgrounded app, revoked permission, missing recognizer)
+     * disable the mode instead of leaving it silently armed.
+     */
+    private fun rearmHandsFreeListening() {
+        if (!_handsFreeActive.value) return
+        if (!runtime.isAppForeground || !runtime.hasRecordAudioPermission() || !stt.isAvailable) {
+            _handsFreeActive.value = false
+            return
+        }
+        viewModelScope.launch {
+            delay(HANDS_FREE_REARM_DELAY_MS)
+            if (!_handsFreeActive.value) return@launch
+            if (listening || _uiState.value.isLoading) return@launch
+            micHeld = true
+            beginRecognition()
+        }
+    }
+
+    /** Called when a generation fully ends (reply delivered or cancelled). */
+    private fun markHandsFreeReplyDelivered() {
+        handsFreeVoicing = false
+        rearmHandsFreeListening()
     }
 
     fun stopVoiceInput() {
@@ -669,7 +782,11 @@ class JarvisViewModel(
         _uiState.update { it.copy(notice = message) }
         if (!tts.muted) {
             EventBus.publish(EventType.TTS_STARTED)
-            tts.speak(message)
+            if (listening) endListening() // never let the mic hear J.A.R.V.I.S. himself
+            // Route through the sentence queue so hands-free re-arms once the
+            // announcement finishes speaking (exactly-once consumption).
+            handsFreeVoicing = true
+            ttsQueue.value = message
         }
     }
 
@@ -742,6 +859,8 @@ class JarvisViewModel(
         private const val DEFAULT_SESSION_TITLE = "New session"
         private const val LISTENING_PREFIX = "Listening · "
         private const val PROACTIVE_POLL_MS = 60_000L
+        private const val HANDS_FREE_REARM_DELAY_MS = 1_200L
+        private const val HANDS_FREE_MAX_IDLE_RESTARTS = 3
         private const val DEFAULT_VISION_PROMPT = "Describe what you see concisely."
         private const val GREETING_MARK = "\u200B" // zero-width: marks the greeting bubble
         private const val STANDBY_LINE = "At your service, sir."

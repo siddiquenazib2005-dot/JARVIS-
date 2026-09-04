@@ -61,6 +61,7 @@ fun ChatInputBar(
     onStop: () -> Unit,
     isLoading: Boolean,
     isListening: Boolean,
+    handsFreeActive: Boolean = false,
     onMicPressed: () -> Unit,
     onMicReleased: () -> Unit,
     modifier: Modifier = Modifier
@@ -86,7 +87,11 @@ fun ChatInputBar(
                     modifier = Modifier.weight(1f),
                     placeholder = {
                         Text(
-                            if (isListening) "Listening, sir…" else "Ask J.A.R.V.I.S. anything…",
+                            when {
+                                isListening -> "Listening, sir…"
+                                handsFreeActive -> "Hands-free armed, sir…"
+                                else -> "Ask J.A.R.V.I.S. anything…"
+                            },
                             color = TextSecondary
                         )
                     },
