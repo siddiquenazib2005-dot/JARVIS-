@@ -98,15 +98,13 @@ class MasterOrchestrator(
         var memoryStored = false
 
         try {
-            // Fully-online policy: JARVIS ONLY answers through the remote uplink.
-            // If the device is offline there is no local fallback engine — the
-            // single, explicit availability message is surfaced instead.
-            val online = SystemAwareness(appContext).snapshot().online
-            if (online == false) {
-                emit(OrchestratorUpdate.Delta(NOT_AVAILABLE_MESSAGE))
-                emit(completed(false, "offline", startedAt))
-                return@flow
-            }
+            // NOTE: No ConnectivityViewModel-style pre-check here — the old
+            // snapshot().online probe reported false while connections were
+            // perfectly usable (transient activeNetwork/caps nulls), which made
+            // every request die with "check your Internet connection" even when
+            // the user had just configured a valid API key. The provider router
+            // performs the real network attempt and classifies genuine failures,
+            // so availability is decided there — not by this heuristic.
 
             // Fast-path system control: explicit "open <app>" commands launch
             // instantly without an LLM round-trip or tool-classification.
@@ -593,6 +591,6 @@ class MasterOrchestrator(
 
         /** Surfaced whenever the remote uplink cannot be reached (fully-online policy). */
         const val NOT_AVAILABLE_MESSAGE =
-            "Sorry, JARVIS isn't available at the moment. Please check your Internet connection and try again."
+            "I couldn't complete that request, sir — no AI provider is reachable right now. Tap the message to retry, or check the provider key in Settings."
     }
 }

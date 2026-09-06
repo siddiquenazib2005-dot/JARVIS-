@@ -18,6 +18,11 @@ data class SystemSnapshot(
 
 class SystemAwareness(private val context: Context) {
 
+    /** Last non-UNKNOWN connectivity verdict, so a transient radio hiccup never
+     *  flips us to a hard "offline". */
+    @Volatile
+    private var lastKnownOnline: Boolean? = null
+
     fun snapshot(): SystemSnapshot = SystemSnapshot(
         batteryPercent = battery()?.first,
         charging = battery()?.second,
@@ -48,14 +53,42 @@ class SystemAwareness(private val context: Context) {
     }.getOrNull()
 
     private fun isOnline(): Boolean? {
+        // Never report a hard "offline" from a single transient moment:
+        // radio hand-off, airplane-mode flap, VPN churn can all produce a
+        // null activeNetwork while the device is still connected.
         return try {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-                ?: return null
-            val network = cm.activeNetwork ?: return false
-            val caps = cm.getNetworkCapabilities(network) ?: return false
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                ?: return lastKnownOnline
+            // Definitive path: the device's active network voted on directly.
+            val network = cm.activeNetwork
+            if (network != null) {
+                val caps = cm.getNetworkCapabilities(network)
+                if (caps != null) {
+                    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        .also { lastKnownOnline = it }
+                }
+            }
+            // Fallback: activeNetwork is transiently null, so scan everything
+            // the radio currently exposes instead of assuming the worst.
+            val networks = cm.allNetworks.toList()
+            if (networks.isEmpty()) {
+                // No network exists at all — this is a genuine offline moment,
+                // but only settle on it once we have ever seen verdicts.
+                false.also { lastKnownOnline = it }
+            } else {
+                val anyInternet = networks.any { n ->
+                    cm.getNetworkCapabilities(n)?.hasCapability(
+                        NetworkCapabilities.NET_CAPABILITY_INTERNET
+                    ) == true
+                }
+                // Some network is visible but not (yet) the default — radio
+                // hand-off / link-level churn. Trust the last good verdict
+                // rather than lying about being offline; the empty scan above
+                // catches the truly-disconnected case within a poll or two.
+                if (anyInternet) true.also { lastKnownOnline = true } else lastKnownOnline
+            }
         } catch (e: Exception) {
-            null
+            lastKnownOnline
         }
     }
 

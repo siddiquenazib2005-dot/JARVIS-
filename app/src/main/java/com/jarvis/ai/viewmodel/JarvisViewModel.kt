@@ -629,19 +629,14 @@ class JarvisViewModel(
                 when (code) {
                     android.speech.SpeechRecognizer.ERROR_NO_MATCH,
                     android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
-                        // Idle session. In hands-free mode tolerate a couple of
-                        // restarts, then back off to spare the battery.
+                        // Idle session. Stay armed: hands-free keeps listening
+                        // through silence — the user asked for persistent
+                        // hands-free (BUG: "re-arms after each reply" and
+                        // disengages after idle gaps). No backoff, no disengage.
                         if (_handsFreeActive.value) {
-                            handsFreeIdleRestarts++
-                            if (handsFreeIdleRestarts >= HANDS_FREE_MAX_IDLE_RESTARTS) {
-                                _handsFreeActive.value = false
-                                handsFreeIdleRestarts = 0
-                                setNotice("Standing by, sir. Tap the microphone when you need me again.")
-                            } else {
-                                rearmHandsFreeListening()
-                            }
+                            rearmHandsFreeListening()
                         } else {
-                            setNotice("I did not catch that, sir. Hold the microphone and speak.")
+                            setNotice("I did not catch that, sir. Tap the microphone and speak.")
                         }
                     }
                     else -> {
@@ -686,20 +681,14 @@ class JarvisViewModel(
             transcript.isNotEmpty() && _uiState.value.isLoading ->
                 setNotice("Finishing that reply, sir. Say it again once it's done.")
             // Wake-word gate: in gated hands-free sessions a transcript without
-            // the name is ignored (re-arm and keep listening). Push-to-talk
-            // sessions are never gated — the user is already addressing the mic.
+            // the name is ignored (re-arm and KEEP listening — persistent
+            // hands-free must never disengage itself on misses).
             transcript.isNotEmpty() &&
                 _handsFreeActive.value &&
                 _wakeWordEnabled.value &&
                 !WakeWordDetector.containsWakeWord(transcript) -> {
-                wakeWordMissCount++
-                if (wakeWordMissCount >= WAKE_WORD_MAX_MISSES) {
-                    wakeWordMissCount = 0
-                    _handsFreeActive.value = false
-                    setNotice("Standing by, sir. Tap the microphone when you need me again.")
-                } else {
-                    rearmHandsFreeListening()
-                }
+                // Persistent hands-free: a miss never disengages the session.
+                rearmHandsFreeListening()
             }
             else -> {
                 handsFreeIdleRestarts = 0
@@ -730,7 +719,7 @@ class JarvisViewModel(
             _handsFreeActive.value = false
             handsFreeIdleRestarts = 0
             if (listening) stopVoiceInput()
-            setNotice("Hands-free disengaged, sir.")
+            setNotice("Voice mode off.")
         } else {
             if (!runtime.hasRecordAudioPermission()) {
                 setNotice("Microphone access was denied, sir. Grant RECORD_AUDIO to proceed.")
@@ -758,8 +747,20 @@ class JarvisViewModel(
      */
     private fun rearmHandsFreeListening() {
         if (!_handsFreeActive.value) return
-        if (!runtime.isAppForeground || !runtime.hasRecordAudioPermission() || !stt.isAvailable) {
+        // Foreground exit only PAUSES the mic — the appForeground collector re-arms
+        // on return, so the mode must survive a background trip. Only a revoked
+        // permission or a missing recognizer disables the mode outright.
+        if (!runtime.hasRecordAudioPermission() || !stt.isAvailable) {
             _handsFreeActive.value = false
+            return
+        }
+        // If the pipeline has drifted (mic ended but mode says armed), restore it.
+        // Idle restart caps no longer apply to wake-word silent sessions: a quiet
+        // room must not disengage a mode the user explicitly armed.
+        if (!listening && !_uiState.value.isLoading) {
+            handsFreeIdleRestarts = 0
+            micHeld = true
+            beginRecognition()
             return
         }
         viewModelScope.launch {

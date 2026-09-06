@@ -18,6 +18,7 @@ app/secrets.properties
 # Build artifacts — source repo only
 dist/
 *.apk
+/.kotlin
 *.aab
 
 # Whole app build dir (tracked build artifacts from an early commit)

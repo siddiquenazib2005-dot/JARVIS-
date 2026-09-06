@@ -78,13 +78,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.jarvis.ai.data.model.LatencyInfo
 import com.jarvis.ai.data.model.SessionInfo
 import com.jarvis.ai.data.model.Sender
 import com.jarvis.ai.ui.components.ChatInputBar
 import com.jarvis.ai.ui.components.GlowBackground
+import com.jarvis.ai.ui.components.JarvisOrb
 import com.jarvis.ai.ui.components.MessageBubble
-import com.jarvis.ai.ui.components.TelemetryRow
 import com.jarvis.ai.ui.theme.ElectricBlue
 import com.jarvis.ai.ui.theme.PanelBlue
 import com.jarvis.ai.ui.theme.TextPrimary
@@ -119,7 +118,9 @@ fun ChatScreen(
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) viewModel.startVoiceInput()
+        // Tap-to-toggle: granting the mic permission starts persistent
+        // hands-free listening (the tap that requested it is the ON tap).
+        if (granted) viewModel.toggleHandsFreeMode()
         else viewModel.voicePermissionDenied()
     }
 
@@ -188,7 +189,8 @@ fun ChatScreen(
                     viewModel.newSession()
                     scope.launch { drawerState.close() }
                 },
-                onClose = { scope.launch { drawerState.close() } }
+                onClose = { scope.launch { drawerState.close() } },
+                onOpenSettings = { showSettings = true }
             )
         }
     ) {
@@ -206,15 +208,8 @@ fun ChatScreen(
                     .imePadding()
             ) {
                 Header(
-                    isBusy = state.isLoading,
-                    isSpeaking = state.isSpeaking,
-                    backendOnline = state.backendOnline,
-                    orbLevel = orbLevel,
-                    activeProvider = state.activeProvider,
-                    latency = state.latency,
                     onNewChat = viewModel::newSession,
-                    onOpenHistory = { scope.launch { drawerState.open() } },
-                    onOpenSettings = { showSettings = true }
+                    onOpenHistory = { scope.launch { drawerState.open() } }
                 )
 
                 AnimatedVisibility(
@@ -231,11 +226,12 @@ fun ChatScreen(
                     }
                 }
 
-                TelemetryRow(
-                    latency = state.latency,
-                    providerLabel = state.activeProvider.ifBlank { "AUTO-ROUTE" },
-                    modelLabel = if (state.backendOnline) "multi-provider" else "offline",
-                    modifier = Modifier.padding(top = 4.dp)
+                StatusChips(
+                    isBusy = state.isLoading,
+                    isSpeaking = state.isSpeaking,
+                    backendOnline = state.backendOnline,
+                    activeProvider = state.activeProvider,
+                    orbLevel = orbLevel
                 )
 
                 LazyColumn(
@@ -249,7 +245,12 @@ fun ChatScreen(
                         state.messages.firstOrNull()?.sender == Sender.JARVIS
                     ) {
                         item(key = "hero") {
-                            WelcomeHero(onSuggestion = ::dispatch)
+                            WelcomeHero(
+                                isListening = state.isListening,
+                                isSpeaking = state.isSpeaking,
+                                orbLevel = orbLevel,
+                                onSuggestion = ::dispatch
+                            )
                         }
                     }
                     items(state.messages, key = { it.id }) { message ->
@@ -277,15 +278,10 @@ fun ChatScreen(
                         isLoading = state.isLoading,
                         isListening = state.isListening,
                         handsFreeActive = handsFreeActive,
-                        // In hands-free mode a tap on the mic disengages it;
-                        // push-to-talk keeps its press-and-hold semantics.
-                        onMicPressed = {
-                            if (handsFreeActive) viewModel.toggleHandsFreeMode()
-                            else beginVoiceInput()
-                        },
-                        onMicReleased = {
-                            if (!handsFreeActive) viewModel.stopVoiceInput()
-                        }
+                        // Tap-to-toggle: one tap starts persistent hands-free
+                        // listening; tapping again stops it. No hold-to-talk.
+                        onMicPressed = { viewModel.toggleHandsFreeMode() },
+                        onMicReleased = { }
                     )
                 }
             }
@@ -348,78 +344,107 @@ private fun downscaleToBase64(
 
 @Composable
 private fun Header(
-    isBusy: Boolean,
-    isSpeaking: Boolean,
-    backendOnline: Boolean,
-    orbLevel: Float,
-    activeProvider: String,
-    latency: LatencyInfo,
     onNewChat: () -> Unit,
-    onOpenHistory: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenHistory: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                "J.A.R.V.I.S.",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(top = 2.dp)
-            ) {
-                Box(
-                    Modifier
-                        .size(7.dp)
-                        .background(
-                            when {
-                                !backendOnline -> Color(0xFFFFB74D)
-                                isSpeaking -> Color(0xFF4CD964)
-                                else -> Color(0xFF5B7CFF)
-                            },
-                            CircleShape
-                        )
-                )
-                Text(
-                    when {
-                        !backendOnline -> "Offline reserves"
-                        isSpeaking -> "Speaking"
-                        isBusy -> "Processing"
-                        else -> activeProvider.ifBlank { "Online • multi-provider" }
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-        IconButton(onClick = onNewChat) {
-            Icon(
-                Icons.Outlined.Refresh,
-                contentDescription = "New chat",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
         IconButton(onClick = onOpenHistory) {
             Icon(
                 Icons.Outlined.List,
                 contentDescription = "Session history",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = TextPrimary
             )
         }
-        IconButton(onClick = onOpenSettings) {
+        Column(
+            Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "JARVIS",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = TextPrimary
+            )
+        }
+        IconButton(onClick = onNewChat) {
             Icon(
-                Icons.Outlined.Settings,
-                contentDescription = "Settings",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                Icons.Filled.Add,
+                contentDescription = "New chat",
+                tint = TextPrimary
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatusChips(
+    isBusy: Boolean,
+    isSpeaking: Boolean,
+    backendOnline: Boolean,
+    activeProvider: String,
+    orbLevel: Float
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        StatusPill(
+            dotColor = when {
+                !backendOnline -> Color(0xFFFFB74D)
+                isSpeaking -> Color(0xFF4CD964)
+                isBusy -> Color(0xFF5B7CFF)
+                else -> Color(0xFF4CD964)
+            },
+            label = when {
+                !backendOnline -> "Offline reserves"
+                isSpeaking -> "Speaking"
+                isBusy -> "Processing"
+                else -> "Online"
+            }
+        )
+        StatusPill(
+            dotColor = ElectricBlue,
+            label = activeProvider.ifBlank { "AUTO-ROUTE" }
+        )
+        StatusPill(
+            dotColor = VioletPulse,
+            label = "Energy ${(orbLevel * 100).toInt()}%"
+        )
+    }
+}
+
+@Composable
+private fun StatusPill(dotColor: Color, label: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .background(dotColor, CircleShape)
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -468,7 +493,8 @@ private fun SessionsDrawer(
     onSelect: (String) -> Unit,
     onDelete: (String) -> Unit,
     onNewChat: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     ModalDrawerSheet(drawerContainerColor = PanelBlue) {
         Row(
@@ -566,6 +592,34 @@ private fun SessionsDrawer(
                     }
                 }
             }
+            item(key = "settings") {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                        .clickable(onClick = onOpenSettings)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Settings,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            "Settings",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextSecondary
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -574,40 +628,36 @@ private fun formatSessionTime(timestamp: Long): String =
     SimpleDateFormat("MMM d · h:mm a", Locale.US).format(Date(timestamp))
 
 private val SUGGESTIONS = listOf(
-    "Run system diagnostics",
-    "Tell me a joke",
-    "What time is it?",
-    "Calculate 42 * 19"
+    "Control my phone",
+    "Analyze my screen",
+    "Send a message",
+    "Open an app",
+    "Search the web",
+    "Ask me anything"
 )
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun WelcomeHero(onSuggestion: (String) -> Unit) {
+private fun WelcomeHero(
+    isListening: Boolean,
+    isSpeaking: Boolean,
+    orbLevel: Float,
+    onSuggestion: (String) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 32.dp),
+            .padding(vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .background(
-                    Brush.linearGradient(listOf(ElectricBlue, VioletPulse)),
-                    CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                "J",
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
-        }
-        Spacer(Modifier.height(16.dp))
+        JarvisOrb(
+            size = 112.dp,
+            active = isListening || isSpeaking,
+            level = orbLevel
+        )
+        Spacer(Modifier.height(20.dp))
         Text(
-            "How may I assist you today?",
+            "How may I assist you today, sir?",
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground,
@@ -615,7 +665,7 @@ private fun WelcomeHero(onSuggestion: (String) -> Unit) {
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Online multi-provider intelligence • voice uplink ready",
+            "Ask a question, run a task, or just talk to me.",
             style = MaterialTheme.typography.labelMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -145,7 +145,9 @@ class ProviderRouter(
 
         // ---- terminal fallback (fully-online policy) ----
         // No local/offline reply engine. If every provider was skipped or failed,
-        // surface the single availability message instead of an offline fabrication.
+        // surface the availability message instead of an offline fabrication.
+        // Connectivity UNKNOWN is never treated as a hard "offline" — real
+        // network faults surface through attempts/error metadata instead.
         try {
             emit(RouteChunk.Delta(com.jarvis.ai.orchestrator.MasterOrchestrator.NOT_AVAILABLE_MESSAGE))
             trail += "offline:fallback"

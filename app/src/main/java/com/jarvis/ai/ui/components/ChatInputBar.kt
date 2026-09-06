@@ -132,22 +132,8 @@ private fun MicButton(
     onReleased: () -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    var armed by remember { mutableStateOf(false) }
-
-    LaunchedEffect(pressed, enabled) {
-        if (!enabled) return@LaunchedEffect
-        if (pressed) {
-            armed = true
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            onPressed()
-        } else if (armed) {
-            armed = false
-            onReleased()
-        }
-    }
-
+    // Tap-to-toggle: the whole press/release dance is gone — a single tap
+    // fires onPressed() once (the caller toggles hands-free on/off).
     val pulse by rememberInfiniteTransition(label = "mic").animateFloat(
         initialValue = 0.55f,
         targetValue = 1f,
@@ -167,11 +153,10 @@ private fun MicButton(
                 },
                 shape = CircleShape
             )
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                enabled = enabled
-            ) {},
+            .clickable(enabled = enabled) {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                onPressed()
+            },
         contentAlignment = Alignment.Center
     ) {
         Box(
