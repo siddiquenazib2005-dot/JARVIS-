@@ -1,10 +1,14 @@
-# J.A.R.V.I.S.
+# AURIX AI Companion
 
-Your personal AI assistant for Android — a conversational companion that can control your device, read your screen, run tasks, and remember what you tell it, powered by multi-provider LLM routing running entirely on-device.
+Original red/black futuristic Android AI companion, rebranded from the existing JARVIS codebase.
+
+GitHub Actions workflow included: **Build AURIX Debug APK** creates a downloadable debug APK artifact on every push.
+
+Your red/black futuristic personal AI companion for Android — a conversational companion that can control your device, read your screen, run tasks, and remember what you tell it, powered by multi-provider LLM routing running entirely on-device.
 
 ## ✨ Features
 
-- **Chat with J.A.R.V.I.S.** — Compose-based chat UI with streaming replies.
+- **Chat with AURIX** — Compose-based chat UI with streaming replies.
 - **Multi-provider LLM routing** — health-aware fallback across OpenAI, OpenRouter, Groq, Gemini and more; backend-only credentials, never exposed to the app.
 - **Device automation** — via an Android AccessibilityService: open/close apps, tap, type, swipe, scroll, long-press, press Back/Home/Recents, lock the screen.
 - **Screen awareness** — visual (OCR via ML Kit + screenshot capture) and semantic (accessibility node tree reading).
@@ -15,7 +19,7 @@ Your personal AI assistant for Android — a conversational companion that can c
 ## 🏗️ Architecture
 
 ```
-J.A.R.V.I.S.
+AURIX
 │
 ├── app/
 │   └── src/
