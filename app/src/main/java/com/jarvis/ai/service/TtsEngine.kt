@@ -156,7 +156,7 @@ class TtsEngine(context: Context) {
     private companion object {
         const val PITCH = 0.95f
         const val RATE = 1.05f
-        const val UTTERANCE_ID_REPLY = "jarvis_reply"
+        const val UTTERANCE_ID_REPLY = "aurix_reply"
         const val ENVELOPE_BASE = 0.25f
         const val ENVELOPE_AMPLITUDE = 0.55f
         const val ENVELOPE_PULSES = 7
