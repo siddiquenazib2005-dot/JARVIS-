@@ -5,7 +5,7 @@ import java.util.UUID
 
 enum class Sender(val label: String) {
     USER("You"),
-    JARVIS("J.A.R.V.I.S.")
+    AURIX("AURIX")
 }
 
 @Serializable
