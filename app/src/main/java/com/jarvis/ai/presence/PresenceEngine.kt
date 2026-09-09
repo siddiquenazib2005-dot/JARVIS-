@@ -31,9 +31,9 @@ object PresenceEngine {
             GreetingPeriod.NIGHT -> "Good night, sir."
         }
         val status = if (backendOnline) {
-            "J.A.R.V.I.S. is online. All primary systems are operational."
+            "AURIX is online. All primary systems are operational."
         } else {
-            "J.A.R.V.I.S. is online in offline mode. Local reserves remain operational."
+            "AURIX is online in offline mode. Local reserves remain operational."
         }
         val taskNote = if (unfinishedTasks > 0) {
             " You have $unfinishedTasks unfinished task${if (unfinishedTasks > 1) "s" else ""} from the previous session."
