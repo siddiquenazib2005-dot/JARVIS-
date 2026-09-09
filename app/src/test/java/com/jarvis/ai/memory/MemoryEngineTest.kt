@@ -71,15 +71,15 @@ class ContextBuilderTest {
     private fun msg(user: Boolean, text: String) =
         com.jarvis.ai.data.model.Message(
             sender = if (user) com.jarvis.ai.data.model.Sender.USER
-            else com.jarvis.ai.data.model.Sender.JARVIS,
+            else com.jarvis.ai.data.model.Sender.AURIX,
             text = text
         )
 
     @Test
     fun `system instructions always first`() {
         val built = ContextBuilder(MemoryEngine(InMemoryKv()))
-            .build("You are JARVIS.", emptyList(), "hello")
-        assertEquals("You are JARVIS.", built.messages.first().content)
+            .build("You are AURIX.", emptyList(), "hello")
+        assertEquals("You are AURIX.", built.messages.first().content)
     }
 
     @Test
@@ -129,7 +129,7 @@ class ContextBuilderTest {
         val mem = MemoryEngine(InMemoryKv())
         val built = ContextBuilder(mem).build(
             "sys", emptyList(), "summarise",
-            toolResults = "Search found: JARVIS wins award"
+            toolResults = "Search found: AURIX wins award"
         )
         assertTrue(built.messages.any { it.content.contains("Search found") })
     }
