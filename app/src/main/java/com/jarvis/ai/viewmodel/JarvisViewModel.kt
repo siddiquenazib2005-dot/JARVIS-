@@ -279,7 +279,7 @@ class JarvisViewModel(
                                     s.copy(
                                         messages = s.messages + Message(
                                             id = replyId,
-                                            sender = Sender.JARVIS,
+                                            sender = Sender.AURIX,
                                             text = fullText.toString().trim()
                                         )
                                     )
@@ -314,7 +314,7 @@ class JarvisViewModel(
                                     s.copy(
                                         messages = s.messages + Message(
                                             id = replyId,
-                                            sender = Sender.JARVIS,
+                                            sender = Sender.AURIX,
                                             text = fullText.toString().trim()
                                         )
                                     )
@@ -361,7 +361,7 @@ class JarvisViewModel(
                         s.copy(
                             messages = s.messages + Message(
                                 id = replyId,
-                                sender = Sender.JARVIS,
+                                sender = Sender.AURIX,
                                 text = fullText.toString().trim()
                             )
                         )
@@ -377,7 +377,7 @@ class JarvisViewModel(
                 throw e
             } catch (e: Exception) {
                 appendMessage(
-                    Message(sender = Sender.JARVIS, text = friendlyError(e), isError = true)
+                    Message(sender = Sender.AURIX, text = friendlyError(e), isError = true)
                 )
             } finally {
                 _uiState.update { it.copy(isLoading = false) }
@@ -410,7 +410,7 @@ class JarvisViewModel(
                 val startedAt = System.currentTimeMillis()
                 val result = orchestrator.analyzeImage(base64Image, mimeType, caption)
                 val reply = Message(
-                    sender = Sender.JARVIS,
+                    sender = Sender.AURIX,
                     text = result.text.ifBlank { "I could not extract anything from that image, sir." }
                 )
                 appendMessage(reply)
@@ -429,7 +429,7 @@ class JarvisViewModel(
                 throw e
             } catch (e: Exception) {
                 appendMessage(
-                    Message(sender = Sender.JARVIS, text = friendlyError(e), isError = true)
+                    Message(sender = Sender.AURIX, text = friendlyError(e), isError = true)
                 )
             } finally {
                 _uiState.update { it.copy(isLoading = false) }
@@ -517,7 +517,7 @@ class JarvisViewModel(
         _uiState.update { s ->
             s.copy(
                 isLoading = false,
-                messages = s.messages.filterNot { it.sender == Sender.JARVIS && it.text.isBlank() }
+                messages = s.messages.filterNot { it.sender == Sender.AURIX && it.text.isBlank() }
             )
         }
     }
@@ -531,7 +531,7 @@ class JarvisViewModel(
             _uiState.update {
                 it.copy(
                     // New chat sessions deliberately do NOT re-greet (PresenceGate owns greetings).
-                    messages = listOf(Message(sender = Sender.JARVIS, text = STANDBY_LINE)),
+                    messages = listOf(Message(sender = Sender.AURIX, text = STANDBY_LINE)),
                     sessions = sessions,
                     activeSessionId = created.id,
                     latency = LatencyInfo(),
@@ -548,7 +548,7 @@ class JarvisViewModel(
             val messages = db.messages(id)
             _uiState.update {
                 it.copy(
-                    messages = messages.ifEmpty { listOf(Message(sender = Sender.JARVIS, text = STANDBY_LINE)) },
+                    messages = messages.ifEmpty { listOf(Message(sender = Sender.AURIX, text = STANDBY_LINE)) },
                     activeSessionId = id,
                     latency = LatencyInfo(),
                     notice = null
@@ -570,7 +570,7 @@ class JarvisViewModel(
                             sessions = sessions,
                             activeSessionId = next.id,
                             messages = db.messages(next.id)
-                                .ifEmpty { listOf(Message(sender = Sender.JARVIS, text = STANDBY_LINE)) }
+                                .ifEmpty { listOf(Message(sender = Sender.AURIX, text = STANDBY_LINE)) }
                         )
                     }
                 } else {
@@ -580,7 +580,7 @@ class JarvisViewModel(
                         it.copy(
                             sessions = db.sessions(),
                             activeSessionId = created.id,
-                            messages = listOf(Message(sender = Sender.JARVIS, text = STANDBY_LINE))
+                            messages = listOf(Message(sender = Sender.AURIX, text = STANDBY_LINE))
                         )
                     }
                 }
@@ -830,7 +830,7 @@ class JarvisViewModel(
         if (_uiState.value.activeSessionId != sessionId) return
         val messages = _uiState.value.messages
         // Find ONLY the reply we generated for this request. The prior fallback to
-        // lastOrNull { it.sender == Sender.JARVIS } could grab an unrelated bubble
+        // lastOrNull { it.sender == Sender.AURIX } could grab an unrelated bubble
         // after a session switch and write it into the wrong session.
         val reply = messages.firstOrNull { it.id == replyId } ?: return
         if (reply.text.isBlank() || reply.text == "…") return
@@ -847,7 +847,7 @@ class JarvisViewModel(
         _uiState.update { it.copy(notice = message) }
         if (!tts.muted) {
             EventBus.publish(EventType.TTS_STARTED)
-            if (listening) endListening() // never let the mic hear J.A.R.V.I.S. himself
+            if (listening) endListening() // never let the mic hear AURIX himself
             // Route through the sentence queue so hands-free re-arms once the
             // announcement finishes speaking (exactly-once consumption).
             handsFreeVoicing = true
@@ -862,7 +862,7 @@ class JarvisViewModel(
         val online = runtime.keys.registeredProviders().isNotEmpty()
         val text = com.jarvis.ai.presence.PresenceEngine.greetingText(hour, online)
             .let { "$GREETING_MARK$it" }
-        return Message(sender = Sender.JARVIS, text = text)
+        return Message(sender = Sender.AURIX, text = text)
     }
 
     private fun appendMessage(message: Message) {
