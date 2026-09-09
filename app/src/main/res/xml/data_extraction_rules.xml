@@ -2,7 +2,7 @@
 <!--
   Data extraction rules for Android 12+ (API 31+).
 
-  JARVIS stores provider API keys in "jarvis_secure" SharedPreferences,
+  AURIX stores provider API keys in "jarvis_secure" SharedPreferences,
   encrypted with an AndroidKeyStore AES-GCM key. Keystore material is
   non-exportable, so a restored backup copy of those ciphertexts could not
   be decrypted on another device — but shipping user secret material in
@@ -12,9 +12,9 @@
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <exclude domain="sharedpref" path="jarvis_secure.xml" />
+        <exclude domain="sharedpref" path="aurix_secure.xml" />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="sharedpref" path="jarvis_secure.xml" />
+        <exclude domain="sharedpref" path="aurix_secure.xml" />
     </device-transfer>
 </data-extraction-rules>
