@@ -1,4 +1,4 @@
-package com.aurix.ai.ui.screens
+package com.jarvis.ai.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -78,18 +78,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.aurix.ai.data.model.SessionInfo
-import com.aurix.ai.data.model.Sender
-import com.aurix.ai.ui.components.ChatInputBar
-import com.aurix.ai.ui.components.GlowBackground
-import com.aurix.ai.ui.components.AurixOrb
-import com.aurix.ai.ui.components.MessageBubble
-import com.aurix.ai.ui.theme.ElectricBlue
-import com.aurix.ai.ui.theme.PanelBlue
-import com.aurix.ai.ui.theme.TextPrimary
-import com.aurix.ai.ui.theme.TextSecondary
-import com.aurix.ai.ui.theme.VioletPulse
-import com.aurix.ai.viewmodel.AurixViewModel
+import com.jarvis.ai.data.model.SessionInfo
+import com.jarvis.ai.data.model.Sender
+import com.jarvis.ai.ui.components.ChatInputBar
+import com.jarvis.ai.ui.components.GlowBackground
+import com.jarvis.ai.ui.components.JarvisOrb
+import com.jarvis.ai.ui.components.MessageBubble
+import com.jarvis.ai.ui.theme.ElectricBlue
+import com.jarvis.ai.ui.theme.PanelBlue
+import com.jarvis.ai.ui.theme.TextPrimary
+import com.jarvis.ai.ui.theme.TextSecondary
+import com.jarvis.ai.ui.theme.VioletPulse
+import com.jarvis.ai.viewmodel.JarvisViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
@@ -101,7 +101,7 @@ private const val LISTENING_PREFIX = "Listening · "
 
 @Composable
 fun ChatScreen(
-    viewModel: AurixViewModel = viewModel(factory = AurixViewModel.factory(LocalContext.current))
+    viewModel: JarvisViewModel = viewModel(factory = JarvisViewModel.factory(LocalContext.current))
 ) {
     val state by viewModel.uiState.collectAsState()
     val orbLevel by viewModel.orbLevel.collectAsState(initial = 0f)
@@ -757,14 +757,14 @@ private val FEATURE_GROUPS = listOf(
 
 @Composable
 private fun SettingsDialog(
-    viewModel: AurixViewModel,
+    viewModel: JarvisViewModel,
     ttsMuted: Boolean,
     onTtsMutedChange: (Boolean) -> Unit,
     handsFreeActive: Boolean,
     onHandsFreeChange: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var health = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.aurix.ai.health.HealthReport?>(null) }
+    var health = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.jarvis.ai.health.HealthReport?>(null) }
     var savedKeys by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(viewModel.configuredProviders().toSet()) }
     val wakeWordEnabled by viewModel.wakeWordEnabled.collectAsState()
     LaunchedEffect(Unit) {
@@ -934,7 +934,7 @@ private fun HealthLine(label: String, value: String) {
 
 @Composable
 private fun ProviderKeySection(
-    viewModel: AurixViewModel,
+    viewModel: JarvisViewModel,
     savedKeys: Set<String>,
     onKeysSaved: () -> Unit
 ) {
