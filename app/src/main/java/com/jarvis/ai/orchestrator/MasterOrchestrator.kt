@@ -483,7 +483,7 @@ class MasterOrchestrator(
         
         if (bitmap == null) {
             updates += OrchestratorUpdate.Delta(
-                "Screen reading unavailable, sir. Enable JARVIS Accessibility in Settings, or grant screen-capture permission."
+                "Screen reading unavailable, sir. Enable AURIX Accessibility in Settings, or grant screen-capture permission."
             )
             return@withContext updates
         }
