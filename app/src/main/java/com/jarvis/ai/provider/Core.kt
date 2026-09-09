@@ -2,7 +2,7 @@ package com.jarvis.ai.provider
 
 import java.util.UUID
 
-/** Every routable capability in the JARVIS operating core. */
+/** Every routable capability in the AURIX operating core. */
 enum class Capability {
     CHAT, REASONING, CODING, VISION, SEARCH, NEWS, WEATHER, MAPS,
     FINANCE, SPACE, STT, TTS, EMBEDDING, RAG, CALCULATION,
