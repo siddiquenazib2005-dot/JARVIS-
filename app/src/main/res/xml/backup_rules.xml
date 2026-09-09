@@ -5,5 +5,5 @@
   never leave the device via auto-backup.
 -->
 <full-backup-content>
-    <exclude domain="sharedpref" path="jarvis_secure.xml" />
+    <exclude domain="sharedpref" path="aurix_secure.xml" />
 </full-backup-content>
