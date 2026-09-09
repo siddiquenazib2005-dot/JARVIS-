@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Single composition root for the JARVIS backend core.
+ * Single composition root for the AURIX backend core.
  *
  * The UI layer NEVER touches provider credentials or endpoints directly — it
  * talks to [com.jarvis.ai.orchestrator.MasterOrchestrator], which routes through
