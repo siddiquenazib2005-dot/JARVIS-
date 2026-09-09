@@ -47,7 +47,7 @@ class ResilientVectorStoreTest {
         val mgr = manager(transport)
 
         val write = mgr.remember(
-            "JARVIS resilience test writes survive remote outages",
+            "AURIX resilience test writes survive remote outages",
             type = MemoryType.FACT,
             source = "unit-test"
         )
