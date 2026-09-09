@@ -12,7 +12,7 @@ class WakeWordDetectorTest {
     fun `exact wake word triggers`() {
         assertTrue(WakeWordDetector.containsWakeWord("jarvis"))
         assertTrue(WakeWordDetector.containsWakeWord("Jarvis"))
-        assertTrue(WakeWordDetector.containsWakeWord("JARVIS what's the time"))
+        assertTrue(WakeWordDetector.containsWakeWord("AURIX what's the time"))
     }
 
     @Test
@@ -49,7 +49,7 @@ class WakeWordDetectorTest {
         )
         assertEquals(
             "open whatsapp",
-            WakeWordDetector.stripWakeWord("JARVIS open whatsapp")
+            WakeWordDetector.stripWakeWord("AURIX open whatsapp")
         )
     }
 
