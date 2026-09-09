@@ -77,7 +77,7 @@ fun MessageBubble(message: Message, modifier: Modifier = Modifier) {
         ) {
             if (!isUser) {
                 Text(
-                    "J.A.R.V.I.S.",
+                    "AURIX",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = FontWeight.SemiBold,
