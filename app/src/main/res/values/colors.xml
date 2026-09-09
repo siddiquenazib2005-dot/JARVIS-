@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="aurix_background">#FF05070F</color>
-    <color name="aurix_red">#FF00E5FF</color>
+    <color name="aurix_background">#FF050506</color>
+    <color name="aurix_red">#FFFF1744</color>
+    <color name="aurix_red_deep">#FF8B0018</color>
+    <color name="aurix_orange">#FFFF6B00</color>
+    <color name="aurix_panel">#FF1A0B0E</color>
 </resources>
