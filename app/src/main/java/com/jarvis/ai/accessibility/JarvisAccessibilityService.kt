@@ -1,4 +1,4 @@
-package com.jarvis.ai.accessibility
+package com.aurix.ai.accessibility
 
 import android.accessibilityservice.AccessibilityService
 import android.app.ActivityManager
@@ -17,7 +17,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Production-hardened JARVIS AccessibilityService.
+ * Production-hardened AURIX AccessibilityService.
  *
  * Responsibilities (see hardening spec):
  *  - Robust lifecycle + observable [A11yServiceState] (phase 1).
@@ -31,7 +31,7 @@ import kotlinx.coroutines.sync.withLock
  *    buttons don't reliably expose stable text/content-description, but do
  *    expose a stable resource id across app updates.
  */
-class JarvisAccessibilityService : AccessibilityService() {
+class AurixAccessibilityService : AccessibilityService() {
 
     enum class A11yServiceState { DISCONNECTED, CONNECTING, AVAILABLE, SUSPENDED }
 
@@ -43,19 +43,19 @@ class JarvisAccessibilityService : AccessibilityService() {
     private val actionMutex = Mutex()
 
     companion object {
-        private const val TAG = "JarvisA11y"
+        private const val TAG = "AurixA11y"
         private const val MAX_ACTION_RETRIES = 2
 
         @Volatile
-        var instance: JarvisAccessibilityService? = null
+        var instance: AurixAccessibilityService? = null
             private set
 
         fun isConnected(): Boolean =
             instance?.stateFlow?.value == A11yServiceState.AVAILABLE
 
-        /** True when the user has enabled JARVIS Accessibility in system settings. */
+        /** True when the user has enabled AURIX Accessibility in system settings. */
         fun isAccessibilityServiceEnabled(context: Context): Boolean {
-            val expected = ComponentName(context, JarvisAccessibilityService::class.java)
+            val expected = ComponentName(context, AurixAccessibilityService::class.java)
             val enabled = Settings.Secure.getString(
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
@@ -132,7 +132,7 @@ class JarvisAccessibilityService : AccessibilityService() {
         Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     fun enableGuide(): String =
-        "Enable JARVIS in Settings → Accessibility → JARVIS, then grant permission."
+        "Enable AURIX in Settings → Accessibility → AURIX, then grant permission."
 
     // ------------------------------------------------------------------
     // Internal helpers
@@ -176,10 +176,10 @@ class JarvisAccessibilityService : AccessibilityService() {
 
     suspend fun openAppByPackage(packageName: String): A11yResult = serialized("open_app") {
         AccessibilityLogger.command("open_app:$packageName")
-        if (!isAccessibilityServiceEnabled(this@JarvisAccessibilityService)) {
+        if (!isAccessibilityServiceEnabled(this@AurixAccessibilityService)) {
             return@serialized A11yResult.failure(
                 A11yErrorCode.SERVICE_UNAVAILABLE, action = "open_app", packageName = packageName,
-                message = "JARVIS accessibility is not enabled. ${enableGuide()}"
+                message = "AURIX accessibility is not enabled. ${enableGuide()}"
             )
         }
         if (isAppForeground(packageName)) {
@@ -252,10 +252,10 @@ class JarvisAccessibilityService : AccessibilityService() {
      */
     suspend fun closeAppByPackage(packageName: String): A11yResult = serialized("close_app") {
         AccessibilityLogger.command("close_app:$packageName")
-        if (!isAccessibilityServiceEnabled(this@JarvisAccessibilityService)) {
+        if (!isAccessibilityServiceEnabled(this@AurixAccessibilityService)) {
             return@serialized A11yResult.failure(
                 A11yErrorCode.ACCESSIBILITY_DISABLED, action = "close_app", packageName = packageName,
-                message = "JARVIS accessibility is not enabled. ${enableGuide()}"
+                message = "AURIX accessibility is not enabled. ${enableGuide()}"
             )
         }
         val launched = runCatching { packageManager.getLaunchIntentForPackage(packageName) }.getOrNull()
