@@ -1,4 +1,4 @@
-package com.aurix.ai.accessibility
+package com.jarvis.ai.accessibility
 
 import android.accessibilityservice.AccessibilityService
 import android.app.ActivityManager
@@ -31,7 +31,7 @@ import kotlinx.coroutines.sync.withLock
  *    buttons don't reliably expose stable text/content-description, but do
  *    expose a stable resource id across app updates.
  */
-class AurixAccessibilityService : AccessibilityService() {
+class JarvisAccessibilityService : AccessibilityService() {
 
     enum class A11yServiceState { DISCONNECTED, CONNECTING, AVAILABLE, SUSPENDED }
 
@@ -47,7 +47,7 @@ class AurixAccessibilityService : AccessibilityService() {
         private const val MAX_ACTION_RETRIES = 2
 
         @Volatile
-        var instance: AurixAccessibilityService? = null
+        var instance: JarvisAccessibilityService? = null
             private set
 
         fun isConnected(): Boolean =
@@ -55,7 +55,7 @@ class AurixAccessibilityService : AccessibilityService() {
 
         /** True when the user has enabled AURIX Accessibility in system settings. */
         fun isAccessibilityServiceEnabled(context: Context): Boolean {
-            val expected = ComponentName(context, AurixAccessibilityService::class.java)
+            val expected = ComponentName(context, JarvisAccessibilityService::class.java)
             val enabled = Settings.Secure.getString(
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
@@ -176,7 +176,7 @@ class AurixAccessibilityService : AccessibilityService() {
 
     suspend fun openAppByPackage(packageName: String): A11yResult = serialized("open_app") {
         AccessibilityLogger.command("open_app:$packageName")
-        if (!isAccessibilityServiceEnabled(this@AurixAccessibilityService)) {
+        if (!isAccessibilityServiceEnabled(this@JarvisAccessibilityService)) {
             return@serialized A11yResult.failure(
                 A11yErrorCode.SERVICE_UNAVAILABLE, action = "open_app", packageName = packageName,
                 message = "AURIX accessibility is not enabled. ${enableGuide()}"
@@ -252,7 +252,7 @@ class AurixAccessibilityService : AccessibilityService() {
      */
     suspend fun closeAppByPackage(packageName: String): A11yResult = serialized("close_app") {
         AccessibilityLogger.command("close_app:$packageName")
-        if (!isAccessibilityServiceEnabled(this@AurixAccessibilityService)) {
+        if (!isAccessibilityServiceEnabled(this@JarvisAccessibilityService)) {
             return@serialized A11yResult.failure(
                 A11yErrorCode.ACCESSIBILITY_DISABLED, action = "close_app", packageName = packageName,
                 message = "AURIX accessibility is not enabled. ${enableGuide()}"
