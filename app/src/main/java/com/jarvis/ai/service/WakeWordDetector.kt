@@ -20,7 +20,7 @@ object WakeWordDetector {
 
     /** Primary phrase plus transcription variants seen in the wild. */
     private val WAKE_WORDS = listOf(
-        "jarvis", "javis", "jarves", "jervis", "jarvic", "jarwis", "jarviz", "jervaz"
+        "aurix", "orix", "aurex", "jarvis", "javis", "jarves", "jervis", "jarvic", "jarwis", "jarviz", "jervaz"
     )
 
     /** Word-boundary anchored so substrings inside other words never match. */
