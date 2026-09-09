@@ -13,15 +13,18 @@ val keystoreProps = Properties().apply {
 }
 
 android {
+    // namespace stays com.jarvis.ai so no Kotlin source has to move.
+    // applicationId is the AURIX brand id, which also avoids any signature
+    // clash with an older com.jarvis.ai build still known to the device.
     namespace = "com.jarvis.ai"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.jarvis.ai"
+        applicationId = "com.aurix.ai"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
         vectorDrawables {
             useSupportLibrary = true
         }
