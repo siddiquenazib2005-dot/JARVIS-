@@ -90,7 +90,7 @@ fun ChatInputBar(
                             when {
                                 isListening -> "Listening, sir…"
                                 handsFreeActive -> "Hands-free armed, sir…"
-                                else -> "Ask J.A.R.V.I.S. anything…"
+                                else -> "Ask AURIX anything…"
                             },
                             color = TextSecondary
                         )
