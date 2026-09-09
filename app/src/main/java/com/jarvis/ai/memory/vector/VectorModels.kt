@@ -67,7 +67,7 @@ fun cosineSimilarity(a: List<Float>, b: List<Float>): Float {
 }
 
 /**
- * Storage seam — JARVIS is never permanently coupled to one vector database.
+ * Storage seam — AURIX is never permanently coupled to one vector database.
  * Implementations: InMemoryVectorStore (local fallback), QdrantVectorStore (cloud),
  * Pinecone/pgvector reserved for later.
  */
