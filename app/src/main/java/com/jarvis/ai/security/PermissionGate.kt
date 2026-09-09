@@ -5,7 +5,7 @@ import com.jarvis.ai.provider.SecretRedactor
 /** Four-tier permission model for every tool/action. */
 enum class PermissionLevel {
     READ_ONLY,        // automatic
-    LOW_RISK,         // automatic (writes that stay inside JARVIS data)
+    LOW_RISK,         // automatic (writes that stay inside AURIX data)
     CONFIRM_REQUIRED, // explicit user confirmation
     HIGH_RISK         // explicit confirmation + never auto-executed
 }
@@ -63,7 +63,7 @@ object PermissionGate {
             )
             PermissionLevel.LOW_RISK -> GateDecision(
                 level, allowedWithoutConfirmation = true, requiresConfirmation = false, denied = false,
-                message = "low-risk write inside JARVIS storage"
+                message = "low-risk write inside AURIX storage"
             )
             PermissionLevel.CONFIRM_REQUIRED -> if (userConfirmedThisTurn) {
                 GateDecision(level, true, false, false, "user confirmed")
