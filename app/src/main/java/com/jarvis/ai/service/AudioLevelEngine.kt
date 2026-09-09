@@ -129,7 +129,7 @@ class AudioLevelEngine(private val context: Context) {
         const val DB_WINDOW = 60.0
         const val ATTACK_COEFFICIENT = 0.55f
         const val RELEASE_COEFFICIENT = 0.12f
-        const val THREAD_NAME = "jarvis_mic"
+        const val THREAD_NAME = "aurix_mic"
         const val JOIN_TIMEOUT_MS = 500L
     }
 }
