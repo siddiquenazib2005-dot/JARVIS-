@@ -1,10 +1,10 @@
-package com.aurix.ai.data.repository
+package com.jarvis.ai.data.repository
 
 import android.content.Context
-import com.aurix.ai.data.local.SecureStore
-import com.aurix.ai.data.model.Message
-import com.aurix.ai.data.model.Sender
-import com.aurix.ai.data.remote.AurixApiClient
+import com.jarvis.ai.data.local.SecureStore
+import com.jarvis.ai.data.model.Message
+import com.jarvis.ai.data.model.Sender
+import com.jarvis.ai.data.remote.JarvisApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -18,7 +18,7 @@ data class ProviderPreset(
     val suggestedModel: String
 )
 
-class AurixRepository(context: Context) {
+class JarvisRepository(context: Context) {
 
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -62,13 +62,13 @@ class AurixRepository(context: Context) {
     fun sendMessage(history: List<Message>): Flow<String> {
         val key = getApiKey()
         return if (key.isBlank()) offlineReply(lastUserText(history))
-        else AurixApiClient(getBaseUrl(), getModel()).streamChat(history, SYSTEM_PROMPT, key)
+        else JarvisApiClient(getBaseUrl(), getModel()).streamChat(history, SYSTEM_PROMPT, key)
     }
 
     suspend fun sendMessageOnce(history: List<Message>): String {
         val key = getApiKey()
-        if (key.isBlank()) return OfflineAurixEngine.respond(lastUserText(history))
-        val client = AurixApiClient(getBaseUrl(), getModel())
+        if (key.isBlank()) return OfflineJarvisEngine.respond(lastUserText(history))
+        val client = JarvisApiClient(getBaseUrl(), getModel())
         return withContext(Dispatchers.IO) { client.chatOnce(history, SYSTEM_PROMPT, key) }
     }
 
@@ -77,7 +77,7 @@ class AurixRepository(context: Context) {
 
     private fun offlineReply(userText: String): Flow<String> = flow {
         delay(Random.nextLong(450L, 950L))
-        val reply = OfflineAurixEngine.respond(userText)
+        val reply = OfflineJarvisEngine.respond(userText)
         reply.split(" ").forEachIndexed { index, word ->
             emit(if (index == 0) word else " $word")
             delay(22L)
