@@ -404,7 +404,7 @@ class ToolExecutor(private val context: Context) {
         ) {
             return ToolResult.Failure(
                 toolName = "send_sms",
-                error = "SEND_SMS permission not granted. Enable it in Settings → Apps → JARVIS → Permissions.",
+                error = "SEND_SMS permission not granted. Enable it in Settings → Apps → AURIX → Permissions.",
                 recoverable = false
             )
         }
@@ -466,7 +466,7 @@ class ToolExecutor(private val context: Context) {
         val service = JarvisAccessibilityService.instance
             ?: return ToolResult.Failure(
                 toolName = "send_whatsapp",
-                error = "Accessibility service not enabled. Enable JARVIS in Settings → Accessibility.",
+                error = "Accessibility service not enabled. Enable AURIX in Settings → Accessibility.",
                 recoverable = false
             )
 
@@ -539,7 +539,7 @@ class ToolExecutor(private val context: Context) {
         ) {
             return ToolResult.Failure(
                 toolName = "call_contact",
-                error = "CALL_PHONE permission not granted. Enable it in Settings → Apps → JARVIS → Permissions.",
+                error = "CALL_PHONE permission not granted. Enable it in Settings → Apps → AURIX → Permissions.",
                 recoverable = false
             )
         }
