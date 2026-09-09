@@ -65,7 +65,7 @@ object OfflineJarvisEngine {
     private val GREETING_WORDS = setOf("hello", "hi", "hey", "yo", "namaste")
 
     private fun identity(): String =
-        "I am J.A.R.V.I.S., Just A Rather Very Intelligent System. Presently operating on local reserves:$DEMO_NOTE"
+        "I am AURIX, Just A Rather Very Intelligent System. Presently operating on local reserves:$DEMO_NOTE"
 
     private fun diagnostics(): String =
         "Diagnostics complete, sir. Core: nominal. Memory: nominal. Uplink: standby pending API key. Morale: impeccably British."
