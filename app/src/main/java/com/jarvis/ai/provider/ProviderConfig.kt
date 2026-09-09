@@ -1,6 +1,6 @@
 package com.jarvis.ai.provider
 
-/** Static definition of every provider JARVIS knows about. */
+/** Static definition of every provider AURIX knows about. */
 enum class ProviderType { LLM, SEARCH, NEWS, WEATHER, MAPS, FINANCE, SPACE, STT, TTS, VECTOR_DB }
 
 /**
