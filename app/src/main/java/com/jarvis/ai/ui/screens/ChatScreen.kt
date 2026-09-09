@@ -1,4 +1,4 @@
-package com.jarvis.ai.ui.screens
+package com.aurix.ai.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -78,18 +78,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.jarvis.ai.data.model.SessionInfo
-import com.jarvis.ai.data.model.Sender
-import com.jarvis.ai.ui.components.ChatInputBar
-import com.jarvis.ai.ui.components.GlowBackground
-import com.jarvis.ai.ui.components.JarvisOrb
-import com.jarvis.ai.ui.components.MessageBubble
-import com.jarvis.ai.ui.theme.ElectricBlue
-import com.jarvis.ai.ui.theme.PanelBlue
-import com.jarvis.ai.ui.theme.TextPrimary
-import com.jarvis.ai.ui.theme.TextSecondary
-import com.jarvis.ai.ui.theme.VioletPulse
-import com.jarvis.ai.viewmodel.JarvisViewModel
+import com.aurix.ai.data.model.SessionInfo
+import com.aurix.ai.data.model.Sender
+import com.aurix.ai.ui.components.ChatInputBar
+import com.aurix.ai.ui.components.GlowBackground
+import com.aurix.ai.ui.components.AurixOrb
+import com.aurix.ai.ui.components.MessageBubble
+import com.aurix.ai.ui.theme.ElectricBlue
+import com.aurix.ai.ui.theme.PanelBlue
+import com.aurix.ai.ui.theme.TextPrimary
+import com.aurix.ai.ui.theme.TextSecondary
+import com.aurix.ai.ui.theme.VioletPulse
+import com.aurix.ai.viewmodel.AurixViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
@@ -101,7 +101,7 @@ private const val LISTENING_PREFIX = "Listening · "
 
 @Composable
 fun ChatScreen(
-    viewModel: JarvisViewModel = viewModel(factory = JarvisViewModel.factory(LocalContext.current))
+    viewModel: AurixViewModel = viewModel(factory = AurixViewModel.factory(LocalContext.current))
 ) {
     val state by viewModel.uiState.collectAsState()
     val orbLevel by viewModel.orbLevel.collectAsState(initial = 0f)
@@ -242,7 +242,7 @@ fun ChatScreen(
                     contentPadding = PaddingValues(vertical = 12.dp)
                 ) {
                     if (state.messages.size <= 1 && !state.isLoading &&
-                        state.messages.firstOrNull()?.sender == Sender.JARVIS
+                        state.messages.firstOrNull()?.sender == Sender.AURIX
                     ) {
                         item(key = "hero") {
                             WelcomeHero(
@@ -365,7 +365,7 @@ private fun Header(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                "JARVIS",
+                "AURIX",
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.SemiBold
                 ),
@@ -628,12 +628,12 @@ private fun formatSessionTime(timestamp: Long): String =
     SimpleDateFormat("MMM d · h:mm a", Locale.US).format(Date(timestamp))
 
 private val SUGGESTIONS = listOf(
-    "Control my phone",
-    "Analyze my screen",
-    "Send a message",
+    "Open any app",
+    "Read my screen",
+    "Send WhatsApp",
     "Open an app",
     "Search the web",
-    "Ask me anything"
+    "Start mission"
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -647,58 +647,124 @@ private fun WelcomeHero(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 24.dp),
+            .padding(horizontal = 14.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        JarvisOrb(
-            size = 112.dp,
-            active = isListening || isSpeaking,
-            level = orbLevel
-        )
-        Spacer(Modifier.height(20.dp))
-        Text(
-            "How may I assist you today, sir?",
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(horizontal = 24.dp)
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "Ask a question, run a task, or just talk to me.",
-            style = MaterialTheme.typography.labelMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 24.dp)
-        )
-        Spacer(Modifier.height(24.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.extraLarge,
+            color = Color(0xFF080506).copy(alpha = 0.92f),
+            border = androidx.compose.foundation.BorderStroke(1.dp, ElectricBlue.copy(alpha = 0.42f))
         ) {
-            SUGGESTIONS.forEach { suggestion ->
-                SuggestionChip(
-                    onClick = { onSuggestion(suggestion) },
-                    label = { Text(suggestion) }
+            Column(
+                modifier = Modifier.padding(18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "AURIX",
+                    style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black),
+                    color = TextPrimary,
+                    textAlign = TextAlign.Center
                 )
+                Text(
+                    "AI COMPANION • PRIVATE • POWERFUL • SECURE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ElectricBlue,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(18.dp))
+                JarvisOrb(size = 132.dp, active = isListening || isSpeaking, level = orbLevel)
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Hello, Levinho",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    "How can I assist you today?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            FEATURE_GROUPS.forEach { group ->
+                FeatureCard(group, onSuggestion)
             }
         }
     }
 }
 
 @Composable
+private fun FeatureCard(group: FeatureGroup, onSuggestion: (String) -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSuggestion(group.prompt) },
+        shape = MaterialTheme.shapes.large,
+        color = Color(0xFF12080B).copy(alpha = 0.94f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, group.color.copy(alpha = 0.55f))
+    ) {
+        Row(
+            modifier = Modifier.padding(13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                modifier = Modifier.size(42.dp),
+                shape = CircleShape,
+                color = group.color.copy(alpha = 0.18f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, group.color.copy(alpha = 0.7f))
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(group.icon, style = MaterialTheme.typography.titleLarge)
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(group.title, color = TextPrimary, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                Text(group.items, color = TextSecondary, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+private data class FeatureGroup(
+    val title: String,
+    val items: String,
+    val icon: String,
+    val color: Color,
+    val prompt: String
+)
+
+private val FEATURE_GROUPS = listOf(
+    FeatureGroup("Communication Tools", "WhatsApp • SMS • Email • SOS", "💬", Color(0xFFFF1744), "Send WhatsApp message"),
+    FeatureGroup("Call Tools", "Call contact • Reject • Lookup", "📞", Color(0xFFFF3D00), "Call a contact"),
+    FeatureGroup("Media Tools", "Music • Controls • Volume", "🎵", Color(0xFFFF6B00), "Play music"),
+    FeatureGroup("Device Tools", "Alarm • Flashlight • Battery • Lock", "⚙️", Color(0xFFE91E63), "Show battery status"),
+    FeatureGroup("Files & Photos", "Manager • Zip • Camera • OCR", "📁", Color(0xFFFF1744), "Extract text from image"),
+    FeatureGroup("Screen Automation", "Read • Tap • Type • Scroll", "👆", Color(0xFFFF2D55), "Read my screen"),
+    FeatureGroup("Missions", "Start • Pause • Resume • Cancel", "🚩", Color(0xFF9C27B0), "Start a mission"),
+    FeatureGroup("Search & Apps", "Google • Browser • Open any app", "🔎", Color(0xFFFF6B00), "Open any app")
+)
+
+@Composable
 private fun SettingsDialog(
-    viewModel: JarvisViewModel,
+    viewModel: AurixViewModel,
     ttsMuted: Boolean,
     onTtsMutedChange: (Boolean) -> Unit,
     handsFreeActive: Boolean,
     onHandsFreeChange: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var health = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.jarvis.ai.health.HealthReport?>(null) }
+    var health = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.aurix.ai.health.HealthReport?>(null) }
     var savedKeys by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(viewModel.configuredProviders().toSet()) }
     val wakeWordEnabled by viewModel.wakeWordEnabled.collectAsState()
     LaunchedEffect(Unit) {
@@ -709,14 +775,14 @@ private fun SettingsDialog(
         containerColor = PanelBlue,
         titleContentColor = TextPrimary,
         textContentColor = TextSecondary,
-        title = { Text("J.A.R.V.I.S. System Status") },
+        title = { Text("AURIX System Status") },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    "All intelligence routing is handled securely inside the J.A.R.V.I.S. core.",
+                    "All intelligence routing is handled securely inside the AURIX core.",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 ProviderKeySection(
@@ -733,7 +799,7 @@ private fun SettingsDialog(
                     Column(Modifier.weight(1f)) {
                         Text("Voice replies", style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "J.A.R.V.I.S. speaks responses aloud",
+                            "AURIX speaks responses aloud",
                             style = MaterialTheme.typography.labelSmall,
                             color = TextSecondary
                         )
@@ -771,7 +837,7 @@ private fun SettingsDialog(
                     Column(Modifier.weight(1f)) {
                         Text("Wake word", style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "In hands-free, only \"Jarvis …\" commands are acted on",
+                            "In hands-free, only \"Aurix …\" commands are acted on",
                             style = MaterialTheme.typography.labelSmall,
                             color = TextSecondary
                         )
@@ -868,7 +934,7 @@ private fun HealthLine(label: String, value: String) {
 
 @Composable
 private fun ProviderKeySection(
-    viewModel: JarvisViewModel,
+    viewModel: AurixViewModel,
     savedKeys: Set<String>,
     onKeysSaved: () -> Unit
 ) {
@@ -961,7 +1027,7 @@ private fun ProviderKeySection(
         }
         Text(
             if (savedKeys.isEmpty())
-                "⚠ No keys configured — J.A.R.V.I.S. runs offline only."
+                "⚠ No keys configured — AURIX runs offline only."
             else "✓ ${savedKeys.size} provider(s) configured: ${savedKeys.joinToString(", ")}",
             style = MaterialTheme.typography.labelSmall,
             color = if (savedKeys.isEmpty()) Color(0xFFFF6B6B) else TextSecondary
