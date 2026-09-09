@@ -1,20 +1,20 @@
-package com.jarvis.ai.agent
+package com.aurix.ai.agent
 
 import android.content.Context
-import com.jarvis.ai.accessibility.A11yErrorCode
-import com.jarvis.ai.accessibility.A11yResult
-import com.jarvis.ai.accessibility.JarvisAccessibilityService
-import com.jarvis.ai.accessibility.ScreenReader
-import com.jarvis.ai.intelligence.TaskRouter
-import com.jarvis.ai.orchestrator.MasterOrchestrator
-import com.jarvis.ai.orchestrator.PackageManagerAppLookup
-import com.jarvis.ai.orchestrator.PackageResolver
-import com.jarvis.ai.data.model.Message
-import com.jarvis.ai.data.model.Sender
-import com.jarvis.ai.provider.LlmRouteRequest
-import com.jarvis.ai.provider.ProviderRouter
-import com.jarvis.ai.provider.RouteChunk
-import com.jarvis.ai.vision.VisionModule
+import com.aurix.ai.accessibility.A11yErrorCode
+import com.aurix.ai.accessibility.A11yResult
+import com.aurix.ai.accessibility.AurixAccessibilityService
+import com.aurix.ai.accessibility.ScreenReader
+import com.aurix.ai.intelligence.TaskRouter
+import com.aurix.ai.orchestrator.MasterOrchestrator
+import com.aurix.ai.orchestrator.PackageManagerAppLookup
+import com.aurix.ai.orchestrator.PackageResolver
+import com.aurix.ai.data.model.Message
+import com.aurix.ai.data.model.Sender
+import com.aurix.ai.provider.LlmRouteRequest
+import com.aurix.ai.provider.ProviderRouter
+import com.aurix.ai.provider.RouteChunk
+import com.aurix.ai.vision.VisionModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,15 +41,15 @@ class AgentCore(
 
     private fun getScreenReader(): ScreenReader {
         return screenReader ?: run {
-            val instance = JarvisAccessibilityService.instance
-                ?: throw IllegalStateException("Accessibility service not enabled. Enable JARVIS Accessibility in Settings → Accessibility.")
+            val instance = AurixAccessibilityService.instance
+                ?: throw IllegalStateException("Accessibility service not enabled. Enable AURIX Accessibility in Settings → Accessibility.")
             ScreenReader(instance).also { screenReader = it }
         }
     }
 
     private suspend fun findElementByOCR(text: String): Pair<Int, Int>? = withContext(Dispatchers.IO) {
         val visionModule = VisionModule.getInstance(context)
-        val screenshotCapture = com.jarvis.ai.vision.ScreenshotCapture.getInstance(context)
+        val screenshotCapture = com.aurix.ai.vision.ScreenshotCapture.getInstance(context)
         
         val bitmap = screenshotCapture.capture() ?: return@withContext null
         val ocrResult = visionModule.extractStructured(bitmap)
@@ -85,7 +85,7 @@ class AgentCore(
     val state: StateFlow<AgentState> = _state
 
     private val systemPrompt = """
-    You are JARVIS — an Android device control AI agent.
+    You are AURIX — an Android device control AI agent.
     The user gives you a command in natural language.
     You must respond with ONLY a valid JSON array of actions. No explanation. No markdown fences. No preamble. Pure JSON array only.
 
@@ -156,12 +156,12 @@ class AgentCore(
                     // Fetch the agent's action-JSON directly from the provider layer with
                     // the SCREEN_OCR/APP_REASONING/MEMORY_CONTEXT system prompt. Calling
                     // MasterOrchestrator.processRequest() here would run the normal CHAT
-                    // pipeline (JarvisRepository.SYSTEM_PROMPT) instead — the action schema
+                    // pipeline (AurixRepository.SYSTEM_PROMPT) instead — the action schema
                     // was being constructed but never sent to the model, so the result was
                     // never a parseable JSON action array and every task failed validation.
                     val rawJson = providerRouter.routeText(
                         LlmRouteRequest(
-                            capability = com.jarvis.ai.provider.Capability.CHAT,
+                            capability = com.aurix.ai.provider.Capability.CHAT,
                             history = listOf(Message(sender = Sender.USER, text = cleanCommand)),
                             systemPrompt = fullSystem,
                             stream = false
@@ -191,7 +191,7 @@ class AgentCore(
                             // Retry with explicit instruction
                             val retryJson = providerRouter.routeText(
                                 LlmRouteRequest(
-                                    capability = com.jarvis.ai.provider.Capability.CHAT,
+                                    capability = com.aurix.ai.provider.Capability.CHAT,
                                     history = listOf(Message(sender = Sender.USER, text = cleanCommand)),
                                     systemPrompt = "Respond with a JSON array of actions ONLY. No other text.\n\n$fullSystem",
                                     stream = false
@@ -231,10 +231,10 @@ class AgentCore(
     }
 
     private suspend fun executeActions(actions: List<Action>) {
-        val service = JarvisAccessibilityService.instance
+        val service = AurixAccessibilityService.instance
         if (service == null) {
             _state.value = AgentState.Error(
-                "Accessibility service not enabled. Enable JARVIS in Settings → Accessibility."
+                "Accessibility service not enabled. Enable AURIX in Settings → Accessibility."
             )
             return
         }
@@ -353,7 +353,7 @@ class AgentCore(
      */
     private suspend fun executeAiPrompt(
         action: Action.AiPrompt,
-        service: JarvisAccessibilityService
+        service: AurixAccessibilityService
     ): A11yResult {
         val pkg = action.packageName?.takeIf { it.isNotBlank() }
         if (pkg == null) {
@@ -402,7 +402,7 @@ class AgentCore(
     }
     
     fun getCurrentProviderName(): String {
-        return "JARVIS"
+        return "AURIX"
     }
     
     fun getStateFlow(): StateFlow<AgentState> = state
