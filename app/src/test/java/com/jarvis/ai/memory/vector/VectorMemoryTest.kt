@@ -64,7 +64,7 @@ class VectorMemoryTest {
     fun `remember stores and recall retrieves by similarity`() = runBlocking {
         val mgr = manager()
         val result = mgr.remember(
-            "JARVIS release builds run through Gradle assembleRelease in Termux",
+            "AURIX release builds run through Gradle assembleRelease in Termux",
             type = MemoryType.PROCEDURAL
         )
         assertEquals(WriteStatus.STORED, result.status)
