@@ -44,7 +44,12 @@ class FloatingAvatarService : Service() {
     /** The single running pulse; replaced whenever the state changes. */
     private var pulse: ValueAnimator? = null
 
-    private var state: AvatarState = AvatarState.IDLE
+    /**
+     * Named `avatarState`, not `state`: inside a `GradientDrawable.apply { }`
+     * block a plain `state` resolves to `Drawable.getState()` (an IntArray),
+     * which silently shadows this field and fails to compile.
+     */
+    private var avatarState: AvatarState = AvatarState.IDLE
 
     private val main = Handler(Looper.getMainLooper())
 
@@ -52,7 +57,7 @@ class FloatingAvatarService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        state = AvatarStateBus.state()
+        avatarState = AvatarStateBus.state()
         startForeground(NOTIFICATION_ID, buildNotification())
         runCatching { showBubble() }
 
@@ -84,7 +89,7 @@ class FloatingAvatarService : Service() {
      * foreground-service lifecycle are deliberately left untouched.
      */
     private fun applyState(next: AvatarState) {
-        state = next
+        avatarState = next
         val view = bubble
         val skin = bubbleSkin
 
@@ -122,15 +127,16 @@ class FloatingAvatarService : Service() {
         windowManager = manager
 
         val size = (56 * resources.displayMetrics.density).toInt()
+        val current = avatarState
         val skin = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            colors = intArrayOf(state.innerColor, state.outerColor)
+            colors = intArrayOf(current.innerColor, current.outerColor)
             setStroke((2 * resources.displayMetrics.density).toInt(), 0x55FFFFFF)
         }
         bubbleSkin = skin
 
         val view = TextView(this).apply {
-            text = state.glyph
+            text = current.glyph
             setTextColor(Color.WHITE)
             textSize = 20f
             gravity = Gravity.CENTER
@@ -194,7 +200,7 @@ class FloatingAvatarService : Service() {
 
         // Start whatever state was already published, so a bubble opened in the
         // middle of a voice turn does not appear idle.
-        runCatching { applyState(state) }
+        runCatching { applyState(current) }
     }
 
     private fun openAssistant() {
@@ -230,7 +236,7 @@ class FloatingAvatarService : Service() {
             Notification.Builder(this)
         }
         return builder
-            .setContentTitle("AURIX is " + state.label)
+            .setContentTitle("AURIX is " + avatarState.label)
             .setContentText("Tap the bubble any time, sir.")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(open)
