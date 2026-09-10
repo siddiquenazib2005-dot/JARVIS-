@@ -1,0 +1,30 @@
+# One-click deploy config for Render.com (free web service tier).
+# Push this repo, then in Render: New > Blueprint > pick this repo.
+services:
+  - type: web
+    name: aurix-backend
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: node src/index.js
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: AURIX_DATA_DIR
+        value: /tmp/aurix-data
+      - key: AURIX_APP_TOKEN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
