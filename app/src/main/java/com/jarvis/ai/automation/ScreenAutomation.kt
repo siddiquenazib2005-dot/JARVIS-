@@ -38,31 +38,82 @@ class ScreenAutomation(context: Context) {
         }
     }
 
-    private fun dispatch(ack: String, block: suspend (JarvisAccessibilityService) -> Unit): String {
+    /**
+     * Item 4: run one gesture with retry-with-backoff, then report the
+     * verified outcome on [AutomationFeedback].
+     *
+     * Why retries: accessibility trees are a moving target. A tap fired while
+     * a screen is still animating hits nothing, and the old code treated that
+     * as done. Two extra attempts with growing gaps fix the overwhelming
+     * majority of those misses.
+     *
+     * Why a report: the acknowledgement ("Tapping X, sir.") is returned before
+     * the gesture even runs, so it can never be the truth. A short follow-up
+     * line is sent only when the result is genuinely bad, keeping the happy
+     * path quiet.
+     */
+    private fun dispatch(
+        ack: String,
+        what: String,
+        block: suspend (JarvisAccessibilityService) -> com.jarvis.ai.accessibility.A11yResult
+    ): String {
         val service = JarvisAccessibilityService.instance ?: return requestPermission()
-        scope.launch { runCatching { block(service) } }
+        scope.launch {
+            var last: com.jarvis.ai.accessibility.A11yResult? = null
+            for (attempt in 0 until MAX_ATTEMPTS) {
+                if (attempt > 0) delay(BACKOFF_MS[attempt - 1])
+                last = runCatching { block(service) }.getOrNull()
+                if (last != null && last.isSuccess) break
+                if (last != null && !last.retryable && last.isFailure) break
+            }
+            when {
+                last == null ->
+                    AutomationFeedback.report(
+                        "I could not $what, sir - the screen control layer threw an error."
+                    )
+                last.isSuccess -> Unit
+                last.needsConfirmation ->
+                    AutomationFeedback.report(
+                        "That looked risky, sir, so I stopped before I could $what. " +
+                            "Say it again to confirm."
+                    )
+                else -> {
+                    val reason = last.message?.takeIf { it.isNotBlank() }
+                        ?: last.errorCode?.name?.lowercase()?.replace('_', ' ')
+                        ?: "nothing matched on screen"
+                    AutomationFeedback.report(
+                        "I could not $what after ${MAX_ATTEMPTS} tries, sir - $reason."
+                    )
+                }
+            }
+        }
         return ack
     }
 
     fun tap(target: String): String =
-        dispatch("Tapping \"$target\", sir.") { it.tapByText(target) }
+        dispatch("Tapping \"$target\", sir.", "tap \"$target\"") { it.tapByText(target) }
 
     fun longPress(target: String): String =
-        dispatch("Long-pressing \"$target\", sir.") { it.longPressByText(target) }
-
-    fun type(value: String): String =
-        dispatch("Typing that in, sir.") { it.typeText(value) }
-
-    fun scroll(down: Boolean): String =
-        dispatch(if (down) "Scrolling down, sir." else "Scrolling up, sir.") {
-            it.performScroll(down)
+        dispatch("Long-pressing \"$target\", sir.", "long-press \"$target\"") {
+            it.longPressByText(target)
         }
 
+    fun type(value: String): String =
+        dispatch("Typing that in, sir.", "type that in") { it.typeText(value) }
+
+    fun scroll(down: Boolean): String =
+        dispatch(
+            if (down) "Scrolling down, sir." else "Scrolling up, sir.",
+            if (down) "scroll down" else "scroll up"
+        ) { it.performScroll(down) }
+
     fun swipe(direction: String): String =
-        dispatch("Swiping $direction, sir.") { it.swipe(direction) }
+        dispatch("Swiping $direction, sir.", "swipe $direction") { it.swipe(direction) }
 
     fun scrollUntil(text: String): String =
-        dispatch("Looking for \"$text\", sir.") { it.scrollUntilText(text) }
+        dispatch("Looking for \"$text\", sir.", "find \"$text\" on screen") {
+            it.scrollUntilText(text)
+        }
 
     fun back(): String {
         val service = JarvisAccessibilityService.instance ?: return requestPermission()
@@ -174,6 +225,14 @@ class ScreenAutomation(context: Context) {
             }
         }
         return true
+    }
+
+    private companion object {
+        /** One immediate try plus two retries: enough for screen animations. */
+        const val MAX_ATTEMPTS = 3
+
+        /** Growing gaps, so a slow-loading screen still gets a fair chance. */
+        val BACKOFF_MS = longArrayOf(450L, 1000L)
     }
 
     /** Reads what is currently on screen, for "what's on my screen" requests. */
