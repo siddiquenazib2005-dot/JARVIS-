@@ -26,9 +26,46 @@ class QuickCommandRouter(context: Context) {
     private val actions = DeviceActionPack(context)
     private val screen = ScreenAutomation(context)
     private val missions = MissionEngine(context)
+    private val world = MyWorldStore(context)
 
-    /** Returns a reply when the input was fully handled locally, else null. */
-    fun handle(rawInput: String): String? {
+    /**
+     * Returns a reply when the input was fully handled locally, else null.
+     *
+     * Deep wiring rule: a recognised command must never fail silently. If the
+     * action throws, the caller used to swallow the exception and quietly fall
+     * through to the AI provider, which then answered "no API key" or nothing
+     * at all -- the user saw a dead button. Now the error itself is the reply.
+     */
+    fun handle(rawInput: String): String? =
+        runCatching { dispatch(rawInput) }.getOrElse { error ->
+            val reason = error.message?.takeIf { it.isNotBlank() }
+                ?: error::class.java.simpleName
+            "That command failed on the device, sir: $reason"
+        }
+
+    /**
+     * Item 9 detection seam. Image generation is a network call, so it must
+     * NOT run inside [handle], which the view model calls on the main thread.
+     * The view model checks this first and runs the work on an IO dispatcher.
+     *
+     * Returns the subject to draw, or null when this is not an image request.
+     */
+    fun imagePrompt(rawInput: String): String? {
+        val text = normalise(rawInput)
+        val markers = listOf(
+            "generate image of ", "generate an image of ", "generate image ",
+            "create image of ", "create an image of ",
+            "make an image of ", "make image of ",
+            "draw me ", "draw a ", "draw an ", "draw ",
+            "image banao ", "photo banao ", "tasveer banao ",
+            "picture of ", "text to image "
+        )
+        if (!startsWithAny(text, *markers.toTypedArray())) return null
+        val subject = afterAny(text, *markers.toTypedArray())?.trim().orEmpty()
+        return subject.takeIf { it.length in 2..400 }
+    }
+
+    private fun dispatch(rawInput: String): String? {
         val input = rawInput.trim()
         if (input.isBlank()) return null
         val text = normalise(input)
@@ -182,8 +219,32 @@ class QuickCommandRouter(context: Context) {
             return actions.openFiles()
         }
 
+        // ---------- My World (item 8, option B) ----------
+        // Checked before Maps so "navigate to gym" can resolve a pinned place
+        // into coordinates instead of sending Maps a meaningless search word.
+        afterAny(
+            text,
+            "remember this place as ", "remember this spot as ",
+            "pin this place as ", "save this place as ", "yaad rakho yeh jagah "
+        )?.let { spec ->
+            val name = spec.substringBefore(" because ").substringBefore(" note ").trim()
+            val note = afterAny(spec, " because ", " note ").orEmpty()
+            if (name.isNotBlank()) return world.remember(name, note)
+        }
+        afterAny(text, "where is ", "kaha hai ")?.let { name ->
+            world.coordinatesFor(name)?.let { return world.where(name) }
+        }
+        if (matches(text, "my world", "my places", "saved places", "pinned places")) {
+            return world.list()
+        }
+        afterAny(text, "forget place ", "remove place ", "delete place ")?.let {
+            return world.forget(it)
+        }
+
         // ---------- Maps ----------
         afterAny(text, "navigate to", "directions to", "take me to", "route to", "chalna hai")?.let {
+            // A pinned place beats a text search: exact coordinates, no guessing.
+            world.coordinatesFor(it)?.let { coords -> return actions.navigate(coords) }
             return actions.navigate(it)
         }
         afterAny(text, "nearby", "near me", "paas me", "aaspaas")?.let {
@@ -245,8 +306,12 @@ class QuickCommandRouter(context: Context) {
         afterAny(text, "search youtube for", "youtube search", "play on youtube", "youtube per")?.let {
             return actions.youtubeSearch(it)
         }
-        afterAny(text, "google ", "search for ", "search web for ", "web search ")?.let {
-            if (it.isNotBlank()) return actions.webSearch(it)
+        // startsWith, not contains: "ok google" mid-sentence or "search for"
+        // inside a longer question should not hijack the whole request.
+        if (startsWithAny(text, "google ", "search for ", "search web for ", "web search ")) {
+            afterAny(text, "google ", "search for ", "search web for ", "web search ")?.let {
+                if (it.isNotBlank()) return actions.webSearch(it)
+            }
         }
         afterAny(text, "open website ", "go to site ", "open link ")?.let {
             return actions.openUrl(it)
@@ -276,7 +341,10 @@ class QuickCommandRouter(context: Context) {
 
         // ---------- App info / share ----------
         if (matches(text, "app info", "aurix permissions", "app permissions")) return actions.openAppInfo()
-        afterAny(text, "share ")?.let { if (it.length in 1..500) return actions.shareText(it) }
+        // startsWith only: "share market kya hai" is a question, not a share.
+        if (startsWithAny(text, "share ")) {
+            afterAny(text, "share ")?.let { if (it.length in 1..500) return actions.shareText(it) }
+        }
 
         return null
     }
