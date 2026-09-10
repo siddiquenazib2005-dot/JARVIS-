@@ -24,6 +24,8 @@ import com.jarvis.ai.orchestrator.ToolExecutor
 import com.jarvis.ai.presence.PresenceGate
 import com.jarvis.ai.proactive.ProactiveEngine
 import com.jarvis.ai.provider.Capability
+import com.jarvis.ai.data.remote.AurixBackendClient
+import com.jarvis.ai.data.remote.BackendPrefs
 import com.jarvis.ai.provider.ModelCatalog
 import com.jarvis.ai.provider.ModelOption
 import com.jarvis.ai.provider.ProviderRegistry
@@ -138,6 +140,7 @@ class JarvisViewModel(
 
     init {
         RoutingPrefs.init(appContext)
+        BackendPrefs.init(appContext)
         _selectedModel.value = ModelCatalog.find(RoutingPrefs.pinnedProviderId, RoutingPrefs.pinnedModel)
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -233,6 +236,115 @@ class JarvisViewModel(
         }
     }
 
+    /** Backend base URL currently configured, or an empty string. */
+    val backendUrl: String get() = BackendPrefs.baseUrl
+
+    /** Saves the backend pointer and reports the live connection state. */
+    fun saveBackend(url: String, token: String, onResult: (String) -> Unit) {
+        BackendPrefs.save(url, token)
+        if (!BackendPrefs.isEnabled) {
+            onResult("Backend cleared — using on-device routing, sir.")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val summary = runCatching {
+                AurixBackendClient(BackendPrefs.baseUrl, BackendPrefs.appToken).describeConnection()
+            }.getOrElse { "Backend unreachable — ${it.message.orEmpty()}" }
+            onResult(summary)
+        }
+    }
+
+    /**
+     * Streams a reply from the user's own AURIX backend, which owns the API
+     * keys, provider failover and long-term memory.
+     */
+    private fun streamFromBackend(sessionId: String, prompt: String) {
+        clearNotice()
+        val userMessage = Message(sender = Sender.USER, text = prompt)
+        val history = _uiState.value.messages.filterNot { it.text.startsWith(GREETING_MARK) }
+        _uiState.update {
+            it.copy(
+                messages = it.messages + userMessage,
+                isLoading = true,
+                latency = LatencyInfo()
+            )
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            db.appendMessage(sessionId, userMessage)
+            val firstTurn = _uiState.value.messages.count {
+                it.sender == Sender.USER && !it.text.startsWith(GREETING_MARK)
+            } <= 1
+            if (firstTurn) {
+                db.renameSession(sessionId, prompt.take(TITLE_MAX_LENGTH))
+            } else {
+                db.touchSession(sessionId)
+            }
+        }
+
+        val pinned = _selectedModel.value
+        generationJob = viewModelScope.launch {
+            val replyId = newReplyId()
+            val buffer = StringBuilder()
+            var started = false
+            try {
+                val client = AurixBackendClient(BackendPrefs.baseUrl, BackendPrefs.appToken)
+                client.streamChat(
+                    history = history,
+                    prompt = prompt,
+                    sessionId = sessionId,
+                    model = pinned?.modelId,
+                    providerId = pinned?.providerId
+                ).collect { delta ->
+                    buffer.append(delta)
+                    val text = buffer.toString()
+                    if (!started) {
+                        started = true
+                        _uiState.update { s ->
+                            s.copy(
+                                messages = s.messages + Message(
+                                    id = replyId,
+                                    sender = Sender.AURIX,
+                                    text = text
+                                )
+                            )
+                        }
+                    } else {
+                        _uiState.update { s ->
+                            s.copy(
+                                messages = s.messages.map { m ->
+                                    if (m.id == replyId) m.copy(text = text) else m
+                                }
+                            )
+                        }
+                    }
+                }
+
+                val finalText = buffer.toString().trim()
+                if (finalText.isEmpty()) {
+                    throw IllegalStateException("Backend returned no content.")
+                }
+                ttsQueue.value = finalText
+                _uiState.update { it.copy(isLoading = false) }
+                withContext(Dispatchers.IO) {
+                    db.appendMessage(
+                        sessionId,
+                        Message(id = replyId, sender = Sender.AURIX, text = finalText)
+                    )
+                }
+            } catch (cancellation: CancellationException) {
+                _uiState.update { it.copy(isLoading = false) }
+                throw cancellation
+            } catch (error: Throwable) {
+                val text = error.message?.takeIf { it.isNotBlank() }
+                    ?: "I could not reach the backend, sir."
+                val failure = Message(sender = Sender.AURIX, text = text, isError = true)
+                _uiState.update { it.copy(messages = it.messages + failure, isLoading = false) }
+                withContext(Dispatchers.IO) { db.appendMessage(sessionId, failure) }
+            }
+        }
+    }
+
     /**
      * Persists a user turn plus a locally generated reply without touching any
      * AI provider. Used by the offline quick-command layer.
@@ -319,6 +431,12 @@ class JarvisViewModel(
                 handleLocally(sessionId, trimmed, local)
                 return
             }
+        }
+
+        // Backend path: the user's own server owns keys, routing and memory.
+        if (BackendPrefs.isEnabled) {
+            streamFromBackend(sessionId, trimmed)
+            return
         }
 
         clearNotice()
