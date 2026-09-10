@@ -1,6 +1,12 @@
 package com.jarvis.ai.tools
 
 import android.content.Context
+import com.jarvis.ai.automation.ScreenAutomation
+import com.jarvis.ai.missions.Mission
+import com.jarvis.ai.missions.MissionEngine
+import com.jarvis.ai.notifications.AurixNotificationListener
+import com.jarvis.ai.notifications.NotificationStore
+import com.jarvis.ai.overlay.FloatingAvatarService
 
 /**
  * Deterministic, offline command layer that runs BEFORE any AI provider.
@@ -16,13 +22,97 @@ import android.content.Context
  */
 class QuickCommandRouter(context: Context) {
 
+    private val app = context.applicationContext
     private val actions = DeviceActionPack(context)
+    private val screen = ScreenAutomation(context)
+    private val missions = MissionEngine(context)
 
     /** Returns a reply when the input was fully handled locally, else null. */
     fun handle(rawInput: String): String? {
         val input = rawInput.trim()
         if (input.isBlank()) return null
         val text = normalise(input)
+
+        // ---------- Missions (multi-step routines) ----------
+        if (matches(text, "list missions", "my missions", "show missions", "missions list")) {
+            return missions.describeAll()
+        }
+        afterAny(text, "run mission ", "start mission ", "mission run ")?.let {
+            return missions.run(it)
+        }
+        afterAny(text, "delete mission ", "remove mission ")?.let {
+            return missions.delete(it)
+        }
+        afterAny(text, "create mission ", "save mission ", "new mission ")?.let { spec ->
+            val name = spec.substringBefore(":").trim()
+            val stepText = spec.substringAfter(":", "")
+            val steps = stepText.split(",", " then ")
+                .mapNotNull { missions.parseStep(it) }
+            if (name.isBlank() || steps.isEmpty()) {
+                return "Give it a name and steps, sir — for example: " +
+                    "create mission night: torch off, mute, open settings."
+            }
+            return missions.save(Mission(name, steps))
+        }
+        if (text.contains(" then ") && text.split(" then ").size in 2..6) {
+            val steps = text.split(" then ")
+            if (steps.all { missions.parseStep(it) != null }) return missions.runChain(steps)
+        }
+
+        // ---------- Notifications & OTP ----------
+        if (matches(text, "otp", "verification code", "code aaya", "last code")) {
+            if (!AurixNotificationListener.isEnabled(app)) {
+                return AurixNotificationListener.requestAccess(app)
+            }
+            val otp = NotificationStore.latestOtp()
+                ?: return "No fresh OTP in the last ten minutes, sir."
+            return "Your latest OTP is ${otp.first} (from ${otp.second}), sir."
+        }
+        if (matches(text, "notifications", "notification read", "notification dikha", "my alerts")) {
+            if (!AurixNotificationListener.isEnabled(app)) {
+                return AurixNotificationListener.requestAccess(app)
+            }
+            return NotificationStore.summary()
+        }
+
+        // ---------- Floating bubble ----------
+        if (matches(text, "show bubble", "floating avatar", "floating bubble", "bubble on")) {
+            return FloatingAvatarService.show(app)
+        }
+        if (matches(text, "hide bubble", "close bubble", "bubble off", "remove bubble")) {
+            return FloatingAvatarService.hide(app)
+        }
+
+        // ---------- Screen automation ----------
+        if (matches(text, "what's on my screen", "whats on my screen", "read screen", "read my screen", "screen padho")) {
+            return screen.readScreen()
+        }
+        if (startsWithAny(text, "tap on ", "tap ", "click on ", "click ", "press button ")) {
+            afterAny(text, "tap on ", "tap ", "click on ", "click ", "press button ")?.let {
+                if (it.length in 1..40) return screen.tap(it)
+            }
+        }
+        if (startsWithAny(text, "long press ", "hold on ")) {
+            afterAny(text, "long press ", "hold on ")?.let {
+                if (it.length in 1..40) return screen.longPress(it)
+            }
+        }
+        if (startsWithAny(text, "type ", "likho ", "enter text ")) {
+            afterAny(text, "type ", "likho ", "enter text ")?.let {
+                if (it.length in 1..300) return screen.type(it)
+            }
+        }
+        afterAny(text, "scroll until ", "find on screen ")?.let { return screen.scrollUntil(it) }
+        if (matches(text, "scroll down", "neeche scroll")) return screen.scroll(true)
+        if (matches(text, "scroll up", "upar scroll")) return screen.scroll(false)
+        afterAny(text, "swipe ")?.let { direction ->
+            val dir = listOf("up", "down", "left", "right").firstOrNull { direction.contains(it) }
+            if (dir != null) return screen.swipe(dir)
+        }
+        if (matches(text, "go back", "press back", "back jao")) return screen.back()
+        if (matches(text, "go home", "home screen", "press home")) return screen.home()
+        if (matches(text, "recent apps", "app switcher", "recents")) return screen.recents()
+        if (matches(text, "lock screen", "lock the phone", "phone lock")) return screen.lock()
 
         // ---------- Flashlight / torch ----------
         if (matches(text, "flashlight", "flash light", "torch", "tourch")) {
@@ -167,11 +257,6 @@ class QuickCommandRouter(context: Context) {
         if (matches(text, "app info", "aurix permissions", "app permissions")) return actions.openAppInfo()
         afterAny(text, "share ")?.let { if (it.length in 1..500) return actions.shareText(it) }
 
-        // ---------- PC connect ----------
-        if (matches(text, "pc connect", "connect to pc", "desktop bridge")) {
-            return actions.pcBridgeInfo(PC_BRIDGE_PORT)
-        }
-
         return null
     }
 
@@ -184,6 +269,9 @@ class QuickCommandRouter(context: Context) {
 
     private fun matches(text: String, vararg needles: String): Boolean =
         needles.any { text.contains(it) }
+
+    private fun startsWithAny(text: String, vararg prefixes: String): Boolean =
+        prefixes.any { text.startsWith(it) }
 
     private fun isOffRequest(text: String): Boolean =
         matches(text, " off", "band", "bandh", "disable", "turn off", "switch off")
@@ -267,7 +355,4 @@ class QuickCommandRouter(context: Context) {
         return recipient!! to body!!
     }
 
-    companion object {
-        const val PC_BRIDGE_PORT = 8765
-    }
 }
