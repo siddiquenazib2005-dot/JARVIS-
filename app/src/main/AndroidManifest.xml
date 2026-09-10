@@ -18,6 +18,9 @@
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
+    <!-- Item 2: attach location to an SOS message (coarse is enough) -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <!-- Added for call_contact tool (roadmap step 2) -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
 
@@ -86,6 +89,15 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Floating assistant bubble requested by the user" />
         </service>
+
+        <!-- Item 5: scheduled missions (daily trigger) -->
+        <receiver
+            android:name=".missions.MissionAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.aurix.ai.action.RUN_MISSION" />
+            </intent-filter>
+        </receiver>
 
     </application>
 
