@@ -1,64 +1,64 @@
 package com.jarvis.ai.ui.screens
 
 import android.Manifest
-import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.List
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,985 +66,732 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.jarvis.ai.data.model.SessionInfo
+import com.jarvis.ai.data.model.Message
 import com.jarvis.ai.data.model.Sender
-import com.jarvis.ai.ui.components.ChatInputBar
-import com.jarvis.ai.ui.components.GlowBackground
-import com.jarvis.ai.ui.components.JarvisOrb
-import com.jarvis.ai.ui.components.MessageBubble
-import com.jarvis.ai.ui.theme.ElectricBlue
-import com.jarvis.ai.ui.theme.PanelBlue
-import com.jarvis.ai.ui.theme.TextPrimary
-import com.jarvis.ai.ui.theme.TextSecondary
-import com.jarvis.ai.ui.theme.VioletPulse
+import com.jarvis.ai.provider.ModelCatalog
+import com.jarvis.ai.provider.ModelOption
+import com.jarvis.ai.ui.components.markdown.MarkdownText
 import com.jarvis.ai.viewmodel.JarvisViewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.ByteArrayOutputStream
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
-private const val LISTENING_PREFIX = "Listening · "
+/**
+ * AURIX chat surface.
+ *
+ * Layout deliberately mirrors the familiar ChatGPT shape:
+ *  - slim top bar: sessions drawer · model chip · new chat
+ *  - full-width assistant turns, right-aligned user bubbles
+ *  - empty state with tappable suggestion prompts (real prompts, not labels)
+ *  - rounded pill composer pinned to the bottom with mic + send
+ *
+ * Everything is self-contained so the screen has no hidden dependencies on
+ * other component signatures.
+ */
+
+private val Ink = Color(0xFF0B0B0D)
+private val Panel = Color(0xFF17171A)
+private val PanelSoft = Color(0xFF1F1F23)
+private val Stroke = Color(0xFF2C2C31)
+private val Accent = Color(0xFFFF1744)
+private val TextHi = Color(0xFFF3F3F4)
+private val TextLo = Color(0xFF9A9AA2)
+
+/** Suggestion chips: label shown to the user, prompt actually sent. */
+private data class Suggestion(val label: String, val prompt: String)
+
+private val SUGGESTIONS = listOf(
+    Suggestion("Battery status", "battery status"),
+    Suggestion("Turn on flashlight", "flashlight on"),
+    Suggestion("Open WhatsApp", "open whatsapp"),
+    Suggestion("Set a 10 minute timer", "set a timer for 10 minutes"),
+    Suggestion("Device report", "device status"),
+    Suggestion("Navigate home", "navigate to home"),
+    Suggestion("List my apps", "list apps"),
+    Suggestion("Open camera", "open camera")
+)
 
 @Composable
 fun ChatScreen(
     viewModel: JarvisViewModel = viewModel(factory = JarvisViewModel.factory(LocalContext.current))
 ) {
     val state by viewModel.uiState.collectAsState()
-    val orbLevel by viewModel.orbLevel.collectAsState(initial = 0f)
+    val selectedModel by viewModel.selectedModel.collectAsState()
+    val handsFree by viewModel.handsFreeActive.collectAsState()
+
     val listState = rememberLazyListState()
-    val keyboard = LocalSoftwareKeyboardController.current
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    var input by rememberSaveable { mutableStateOf("") }
-    var showSettings by rememberSaveable { mutableStateOf(false) }
-    var ttsMuted by rememberSaveable { mutableStateOf(viewModel.ttsMuted) }
-    val handsFreeActive by viewModel.handsFreeActive.collectAsState()
+    val keyboard = LocalSoftwareKeyboardController.current
 
-    val context = LocalContext.current
+    var input by rememberSaveable { mutableStateOf("") }
+    var showModels by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        // Tap-to-toggle: granting the mic permission starts persistent
-        // hands-free listening (the tap that requested it is the ON tap).
-        if (granted) viewModel.toggleHandsFreeMode()
-        else viewModel.voicePermissionDenied()
+    ) { granted -> if (granted) viewModel.toggleHandsFreeMode() else viewModel.voicePermissionDenied() }
+
+    val visible = remember(state.messages) {
+        state.messages.filter { it.text.isNotBlank() }
     }
 
-    // Vision input: system photo picker (no storage permission required).
-    val pickImage = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            scope.launch(Dispatchers.IO) {
-                runCatching { downscaleToBase64(context, uri, maxDimPx = 1024) }
-                    .onSuccess { payload ->
-                        viewModel.analyzeImage(payload.first, "image/jpeg", "")
-                    }
-                    .onFailure { viewModel.clearNotice() }
-            }
+    LaunchedEffect(visible.size, state.isLoading) {
+        if (visible.isNotEmpty()) {
+            listState.animateScrollToItem(visible.lastIndex.coerceAtLeast(0))
         }
     }
 
-    fun beginVoiceInput() {
-        viewModel.recordMicPress()
-        val permission = Manifest.permission.RECORD_AUDIO
-        if (ContextCompat.checkSelfPermission(context, permission) ==
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            viewModel.startVoiceInput()
-        } else {
-            micPermission.launch(permission)
-        }
-    }
-
-    LaunchedEffect(
-        state.messages.size,
-        state.messages.lastOrNull()?.text?.length,
-        state.isLoading
-    ) {
-        if (state.messages.isNotEmpty()) {
-            runCatching { listState.animateScrollToItem(state.messages.lastIndex) }
-        }
-    }
-
-    fun dispatch(text: String) {
+    fun submit(text: String) {
+        val payload = text.trim()
+        if (payload.isEmpty()) return
+        viewModel.send(payload)
+        input = ""
         keyboard?.hide()
-        if (state.hasPendingConfirmation) {
-            // The input is still being edited separately, but a tool is waiting
-            // for explicit confirmation — this SEND acts as the "yes" so the
-            // gated tool actually runs instead of re-prompting forever.
-            viewModel.confirmPendingAction()
-        } else {
-            viewModel.send(text)
-            input = ""
-        }
     }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            SessionsDrawer(
-                sessions = state.sessions,
-                activeId = state.activeSessionId,
-                onSelect = {
-                    viewModel.selectSession(it)
-                    scope.launch { drawerState.close() }
-                },
-                onDelete = viewModel::deleteSession,
-                onNewChat = {
-                    viewModel.newSession()
-                    scope.launch { drawerState.close() }
-                },
-                onClose = { scope.launch { drawerState.close() } },
-                onOpenSettings = { showSettings = true }
-            )
+            ModalDrawerSheet(drawerContainerColor = Panel) {
+                SessionDrawer(
+                    sessions = state.sessions.map { it.id to it.title },
+                    activeId = state.activeSessionId,
+                    onSelect = {
+                        viewModel.selectSession(it)
+                        scope.launch { drawerState.close() }
+                    },
+                    onDelete = { viewModel.deleteSession(it) },
+                    onNew = {
+                        viewModel.newSession()
+                        scope.launch { drawerState.close() }
+                    },
+                    onSettings = {
+                        showSettings = true
+                        scope.launch { drawerState.close() }
+                    }
+                )
+            }
         }
     ) {
-        Box(
-            Modifier
+        Column(
+            modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
+                .background(Ink)
+                .statusBarsPadding()
         ) {
-            GlowBackground(Modifier.matchParentSize(), level = orbLevel)
+            TopBar(
+                modelLabel = selectedModel?.label ?: "AURIX · Auto",
+                onMenu = { scope.launch { drawerState.open() } },
+                onModel = { showModels = true },
+                onNew = { viewModel.newSession() }
+            )
 
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .imePadding()
-            ) {
-                Header(
-                    onNewChat = viewModel::newSession,
-                    onOpenHistory = { scope.launch { drawerState.open() } }
-                )
+            state.notice?.let { notice ->
+                NoticeBar(notice) { viewModel.clearNotice() }
+            }
 
-                AnimatedVisibility(
-                    visible = state.notice != null,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    state.notice?.let { notice ->
-                        NoticeBar(
-                            text = notice,
-                            isTranscript = notice.startsWith(LISTENING_PREFIX),
-                            onDismiss = viewModel::clearNotice
-                        )
-                    }
-                }
-
-                StatusChips(
-                    isBusy = state.isLoading,
-                    isSpeaking = state.isSpeaking,
-                    backendOnline = state.backendOnline,
-                    activeProvider = state.activeProvider,
-                    orbLevel = orbLevel
-                )
-
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(vertical = 12.dp)
-                ) {
-                    if (state.messages.size <= 1 && !state.isLoading &&
-                        state.messages.firstOrNull()?.sender == Sender.AURIX
+            Box(modifier = Modifier.weight(1f)) {
+                if (visible.isEmpty()) {
+                    EmptyState(onSuggestion = { submit(it) })
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        item(key = "hero") {
-                            WelcomeHero(
-                                isListening = state.isListening,
-                                isSpeaking = state.isSpeaking,
-                                orbLevel = orbLevel,
-                                onSuggestion = ::dispatch
-                            )
+                        items(visible, key = { it.id }) { message -> Turn(message) }
+                        if (state.isLoading) {
+                            item { ThinkingRow() }
                         }
                     }
-                    items(state.messages, key = { it.id }) { message ->
-                        MessageBubble(message)
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.Bottom) {
-                    TextButton(onClick = {
-                        runCatching {
-                            pickImage.launch(
-                                androidx.activity.result.PickVisualMediaRequest(
-                                    ActivityResultContracts.PickVisualMedia.ImageOnly
-                                )
-                            )
-                        }
-                    }) {
-                        Text("IMG", style = MaterialTheme.typography.labelSmall)
-                    }
-                    ChatInputBar(
-                        value = input,
-                        onValueChange = { input = it },
-                        onSend = ::dispatch,
-                        onStop = viewModel::stopGeneration,
-                        isLoading = state.isLoading,
-                        isListening = state.isListening,
-                        handsFreeActive = handsFreeActive,
-                        // Tap-to-toggle: one tap starts persistent hands-free
-                        // listening; tapping again stops it. No hold-to-talk.
-                        onMicPressed = { viewModel.toggleHandsFreeMode() },
-                        onMicReleased = { }
-                    )
                 }
             }
+
+            Composer(
+                value = input,
+                onValueChange = { input = it },
+                onSend = { submit(input) },
+                onStop = { viewModel.stopGeneration() },
+                onMic = {
+                    micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                },
+                isLoading = state.isLoading,
+                handsFree = handsFree
+            )
         }
     }
 
-    if (showSettings) {
-        SettingsDialog(
-            viewModel = viewModel,
-            ttsMuted = ttsMuted,
-            onTtsMutedChange = {
-                ttsMuted = it
-                viewModel.setTtsMuted(it)
+    if (showModels) {
+        ModelPickerDialog(
+            options = viewModel.availableModels,
+            selected = selectedModel,
+            isReady = { viewModel.isModelReady(it) },
+            onPick = {
+                viewModel.selectModel(it)
+                showModels = false
             },
-            handsFreeActive = handsFreeActive,
-            onHandsFreeChange = { viewModel.toggleHandsFreeMode() },
+            onAuto = {
+                viewModel.selectModel(null)
+                showModels = false
+            },
+            onKeys = {
+                showModels = false
+                showSettings = true
+            },
+            onDismiss = { showModels = false }
+        )
+    }
+
+    if (showSettings) {
+        ProviderKeysDialog(
+            hasKey = { viewModel.hasKey(it) },
+            onSave = { typed, done -> viewModel.testAndSaveKeys(typed, done) },
             onDismiss = { showSettings = false }
         )
     }
 }
 
-private fun String.truncate(max: Int): String =
-    if (length <= max) this else take(max - 1) + "…"
-
-/** Downscales an image from the photo picker and returns (base64Jpeg, mime). */
-private fun downscaleToBase64(
-    context: android.content.Context,
-    uri: android.net.Uri,
-    maxDimPx: Int
-): Pair<String, String> {
-    val resolver = context.contentResolver
-    val bounds = resolver.openInputStream(uri)?.use { stream ->
-        android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            .also { android.graphics.BitmapFactory.decodeStream(stream, null, it) }
-    } ?: throw IllegalStateException("unreadable image")
-    var sample = 1
-    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxDimPx) sample *= 2
-    val bitmap = resolver.openInputStream(uri)?.use { stream ->
-        android.graphics.BitmapFactory.decodeStream(
-            stream, null,
-            android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
-        )
-    } ?: throw IllegalStateException("decode failed")
-    var scaled = bitmap
-    if (maxOf(bitmap.width, bitmap.height) > maxDimPx) {
-        val scale = maxDimPx.toFloat() / maxOf(bitmap.width, bitmap.height)
-        scaled = android.graphics.Bitmap.createScaledBitmap(
-            bitmap,
-            (bitmap.width * scale).toInt().coerceAtLeast(1),
-            (bitmap.height * scale).toInt().coerceAtLeast(1),
-            true
-        )
-    }
-    val bytes = ByteArrayOutputStream().use { out ->
-        scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, out)
-        out.toByteArray()
-    }
-    return android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP) to "image/jpeg"
-}
+// ----------------------------------------------------------------------------
+// Top bar
+// ----------------------------------------------------------------------------
 
 @Composable
-private fun Header(
-    onNewChat: () -> Unit,
-    onOpenHistory: () -> Unit
+private fun TopBar(
+    modelLabel: String,
+    onMenu: () -> Unit,
+    onModel: () -> Unit,
+    onNew: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 6.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onOpenHistory) {
-            Icon(
-                Icons.Outlined.List,
-                contentDescription = "Session history",
-                tint = TextPrimary
-            )
+        IconButton(onClick = onMenu) {
+            Icon(Icons.Filled.Menu, contentDescription = "Chats", tint = TextHi)
         }
-        Column(
-            Modifier.weight(1f),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                "AURIX",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.SemiBold
-                ),
-                color = TextPrimary
-            )
+        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .clickable(onClick = onModel)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(modelLabel, color = TextHi, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Icon(
+                    Icons.Filled.KeyboardArrowDown,
+                    contentDescription = "Change model",
+                    tint = TextLo,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
-        IconButton(onClick = onNewChat) {
-            Icon(
-                Icons.Filled.Add,
-                contentDescription = "New chat",
-                tint = TextPrimary
-            )
+        IconButton(onClick = onNew) {
+            Icon(Icons.Filled.Add, contentDescription = "New chat", tint = TextHi)
         }
     }
+    HorizontalDivider(color = Stroke, thickness = 0.6.dp)
 }
 
 @Composable
-private fun StatusChips(
-    isBusy: Boolean,
-    isSpeaking: Boolean,
-    backendOnline: Boolean,
-    activeProvider: String,
-    orbLevel: Float
-) {
+private fun NoticeBar(text: String, onDismiss: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(PanelSoft)
+            .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        StatusPill(
-            dotColor = when {
-                !backendOnline -> Color(0xFFFFB74D)
-                isSpeaking -> Color(0xFF4CD964)
-                isBusy -> Color(0xFF5B7CFF)
-                else -> Color(0xFF4CD964)
-            },
-            label = when {
-                !backendOnline -> "Offline reserves"
-                isSpeaking -> "Speaking"
-                isBusy -> "Processing"
-                else -> "Online"
-            }
-        )
-        StatusPill(
-            dotColor = ElectricBlue,
-            label = activeProvider.ifBlank { "AUTO-ROUTE" }
-        )
-        StatusPill(
-            dotColor = VioletPulse,
-            label = "Energy ${(orbLevel * 100).toInt()}%"
-        )
-    }
-}
-
-@Composable
-private fun StatusPill(dotColor: Color, label: String) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            Box(
-                Modifier
-                    .size(6.dp)
-                    .background(dotColor, CircleShape)
-            )
-            Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+        Text(text, color = TextLo, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = "Dismiss",
+                tint = TextLo,
+                modifier = Modifier.size(16.dp)
             )
         }
     }
 }
 
-@Composable
-private fun NoticeBar(text: String, isTranscript: Boolean, onDismiss: () -> Unit) {
-    Surface(
-        color = if (isTranscript) PanelBlue.copy(alpha = 0.9f)
-        else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f),
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (isTranscript) TextPrimary else MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.weight(1f),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (!isTranscript) {
-                IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
-                    Icon(
-                        Icons.Outlined.Close,
-                        contentDescription = "Dismiss",
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-        }
-    }
-}
+// ----------------------------------------------------------------------------
+// Messages
+// ----------------------------------------------------------------------------
 
 @Composable
-private fun SessionsDrawer(
-    sessions: List<SessionInfo>,
-    activeId: String,
-    onSelect: (String) -> Unit,
-    onDelete: (String) -> Unit,
-    onNewChat: () -> Unit,
-    onClose: () -> Unit,
-    onOpenSettings: () -> Unit
-) {
-    ModalDrawerSheet(drawerContainerColor = PanelBlue) {
+private fun Turn(message: Message) {
+    if (message.sender == Sender.USER) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
         ) {
-            Text(
-                "SESSIONS",
-                style = MaterialTheme.typography.titleMedium,
-                color = TextPrimary,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = onClose) {
-                Icon(
-                    Icons.Outlined.Close,
-                    contentDescription = "Close",
-                    tint = TextSecondary
-                )
-            }
-        }
-        Surface(
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp)
-                .clickable(onClick = onNewChat)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Surface(
+                color = PanelSoft,
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.widthIn(max = 300.dp)
             ) {
-                Icon(
-                    Icons.Filled.Add,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
                 Text(
-                    "New session",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary
+                    message.text,
+                    color = TextHi,
+                    fontSize = 15.sp,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
-        LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-            items(sessions, key = { it.id }) { session ->
-                val active = session.id == activeId
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelect(session.id) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = if (active) MaterialTheme.colorScheme.surfaceVariant
-                        else Color.Transparent,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(start = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    session.title,
-                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
-                                    ),
-                                    color = if (active) TextPrimary else TextSecondary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    formatSessionTime(session.updatedAt),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = TextSecondary
-                                )
-                            }
-                            IconButton(onClick = { onDelete(session.id) }) {
-                                Icon(
-                                    Icons.Outlined.Delete,
-                                    contentDescription = "Delete ${session.title}",
-                                    tint = TextSecondary.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+    } else {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(Accent),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("A", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
-            item(key = "settings") {
-                Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                        .clickable(onClick = onOpenSettings)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Outlined.Settings,
-                            contentDescription = null,
-                            tint = TextSecondary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            "Settings",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = TextSecondary
-                        )
-                    }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                if (message.isError) {
+                    Text(message.text, color = Color(0xFFFF5E57), fontSize = 15.sp)
+                } else {
+                    MarkdownText(markdown = message.text)
                 }
             }
         }
     }
 }
 
-private fun formatSessionTime(timestamp: Long): String =
-    SimpleDateFormat("MMM d · h:mm a", Locale.US).format(Date(timestamp))
-
-private val SUGGESTIONS = listOf(
-    "Open any app",
-    "Read my screen",
-    "Send WhatsApp",
-    "Open an app",
-    "Search the web",
-    "Start mission"
-)
-
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun WelcomeHero(
-    isListening: Boolean,
-    isSpeaking: Boolean,
-    orbLevel: Float,
-    onSuggestion: (String) -> Unit
+private fun ThinkingRow() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        CircularProgressIndicator(
+            color = Accent,
+            strokeWidth = 2.dp,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(Modifier.width(10.dp))
+        Text("Thinking…", color = TextLo, fontSize = 14.sp)
+    }
+}
+
+@Composable
+private fun EmptyState(onSuggestion: (String) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(Accent),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("A", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "How can I help you today?",
+            color = TextHi,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Device commands work offline. Add an API key for full conversation.",
+            color = TextLo,
+            fontSize = 13.sp,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(22.dp))
+        SUGGESTIONS.chunked(2).forEach { pair ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                pair.forEach { suggestion ->
+                    Surface(
+                        color = Panel,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .border(0.6.dp, Stroke, RoundedCornerShape(14.dp))
+                            .clickable { onSuggestion(suggestion.prompt) }
+                    ) {
+                        Text(
+                            suggestion.label,
+                            color = TextHi,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Composer
+// ----------------------------------------------------------------------------
+
+@Composable
+private fun Composer(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onStop: () -> Unit,
+    onMic: () -> Unit,
+    isLoading: Boolean,
+    handsFree: Boolean
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.extraLarge,
-            color = Color(0xFF080506).copy(alpha = 0.92f),
-            border = androidx.compose.foundation.BorderStroke(1.dp, ElectricBlue.copy(alpha = 0.42f))
-        ) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    "AURIX",
-                    style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black),
-                    color = TextPrimary,
-                    textAlign = TextAlign.Center
-                )
-                Text(
-                    "AI COMPANION • PRIVATE • POWERFUL • SECURE",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = ElectricBlue,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(Modifier.height(18.dp))
-                JarvisOrb(size = 132.dp, active = isListening || isSpeaking, level = orbLevel)
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    "Hello, Levinho",
-                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Text(
-                    "How can I assist you today?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Spacer(Modifier.height(14.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            FEATURE_GROUPS.forEach { group ->
-                FeatureCard(group, onSuggestion)
-            }
-        }
-    }
-}
-
-@Composable
-private fun FeatureCard(group: FeatureGroup, onSuggestion: (String) -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onSuggestion(group.prompt) },
-        shape = MaterialTheme.shapes.large,
-        color = Color(0xFF12080B).copy(alpha = 0.94f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, group.color.copy(alpha = 0.55f))
+            .background(Ink)
+            .imePadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
         Row(
-            modifier = Modifier.padding(13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(26.dp))
+                .background(Panel)
+                .border(0.6.dp, Stroke, RoundedCornerShape(26.dp))
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.Bottom
         ) {
-            Surface(
-                modifier = Modifier.size(42.dp),
-                shape = CircleShape,
-                color = group.color.copy(alpha = 0.18f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, group.color.copy(alpha = 0.7f))
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(group.icon, style = MaterialTheme.typography.titleLarge)
-                }
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 48.dp, max = 140.dp),
+                placeholder = { Text("Message AURIX…", color = TextLo, fontSize = 15.sp) },
+                maxLines = 5,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                    focusedTextColor = TextHi,
+                    unfocusedTextColor = TextHi,
+                    cursorColor = Accent
+                )
+            )
+            IconButton(onClick = onMic) {
+                Icon(
+                    Icons.Filled.Mic,
+                    contentDescription = "Voice",
+                    tint = if (handsFree) Accent else TextLo
+                )
             }
-            Column(Modifier.weight(1f)) {
-                Text(group.title, color = TextPrimary, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                Text(group.items, color = TextSecondary, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Box(
+                modifier = Modifier
+                    .padding(bottom = 4.dp, end = 2.dp)
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (value.isBlank() && !isLoading) PanelSoft else Accent)
+                    .clickable { if (isLoading) onStop() else onSend() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (isLoading) Icons.Filled.Close else Icons.Filled.Send,
+                    contentDescription = if (isLoading) "Stop" else "Send",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }
 }
 
-private data class FeatureGroup(
-    val title: String,
-    val items: String,
-    val icon: String,
-    val color: Color,
-    val prompt: String
-)
-
-private val FEATURE_GROUPS = listOf(
-    FeatureGroup("Communication Tools", "WhatsApp • SMS • Email • SOS", "💬", Color(0xFFFF1744), "Send WhatsApp message"),
-    FeatureGroup("Call Tools", "Call contact • Reject • Lookup", "📞", Color(0xFFFF3D00), "Call a contact"),
-    FeatureGroup("Media Tools", "Music • Controls • Volume", "🎵", Color(0xFFFF6B00), "Play music"),
-    FeatureGroup("Device Tools", "Alarm • Flashlight • Battery • Lock", "⚙️", Color(0xFFE91E63), "Show battery status"),
-    FeatureGroup("Files & Photos", "Manager • Zip • Camera • OCR", "📁", Color(0xFFFF1744), "Extract text from image"),
-    FeatureGroup("Screen Automation", "Read • Tap • Type • Scroll", "👆", Color(0xFFFF2D55), "Read my screen"),
-    FeatureGroup("Missions", "Start • Pause • Resume • Cancel", "🚩", Color(0xFF9C27B0), "Start a mission"),
-    FeatureGroup("Search & Apps", "Google • Browser • Open any app", "🔎", Color(0xFFFF6B00), "Open any app")
-)
+// ----------------------------------------------------------------------------
+// Session drawer
+// ----------------------------------------------------------------------------
 
 @Composable
-private fun SettingsDialog(
-    viewModel: JarvisViewModel,
-    ttsMuted: Boolean,
-    onTtsMutedChange: (Boolean) -> Unit,
-    handsFreeActive: Boolean,
-    onHandsFreeChange: () -> Unit,
+private fun SessionDrawer(
+    sessions: List<Pair<String, String>>,
+    activeId: String,
+    onSelect: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onNew: () -> Unit,
+    onSettings: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        Text("AURIX", color = TextHi, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClick = onNew)
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = null, tint = Accent)
+            Spacer(Modifier.width(10.dp))
+            Text("New chat", color = TextHi, fontSize = 15.sp)
+        }
+        HorizontalDivider(color = Stroke, thickness = 0.6.dp)
+        Spacer(Modifier.height(8.dp))
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(sessions, key = { it.first }) { (id, title) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (id == activeId) PanelSoft else Color.Transparent)
+                        .clickable { onSelect(id) }
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        title.ifBlank { "New session" },
+                        color = if (id == activeId) TextHi else TextLo,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { onDelete(id) }, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "Delete chat",
+                            tint = TextLo,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+        HorizontalDivider(color = Stroke, thickness = 0.6.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClick = onSettings)
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Settings, contentDescription = null, tint = TextLo)
+            Spacer(Modifier.width(10.dp))
+            Text("API keys & routing", color = TextHi, fontSize = 15.sp)
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Model picker
+// ----------------------------------------------------------------------------
+
+@Composable
+private fun ModelPickerDialog(
+    options: List<ModelOption>,
+    selected: ModelOption?,
+    isReady: (ModelOption) -> Boolean,
+    onPick: (ModelOption) -> Unit,
+    onAuto: () -> Unit,
+    onKeys: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var health = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.jarvis.ai.health.HealthReport?>(null) }
-    var savedKeys by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(viewModel.configuredProviders().toSet()) }
-    val wakeWordEnabled by viewModel.wakeWordEnabled.collectAsState()
-    LaunchedEffect(Unit) {
-        health.value = runCatching { viewModel.healthSnapshot() }.getOrNull()
-    }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = PanelBlue,
-        titleContentColor = TextPrimary,
-        textContentColor = TextSecondary,
-        title = { Text("AURIX System Status") },
+        containerColor = Panel,
+        title = { Text("Choose a model", color = TextHi) },
         text = {
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.verticalScroll(rememberScrollState())
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
-                Text(
-                    "All intelligence routing is handled securely inside the AURIX core.",
-                    style = MaterialTheme.typography.bodyMedium
+                ModelRow(
+                    title = "Auto (multi-API routing)",
+                    subtitle = "Picks the healthiest configured provider automatically",
+                    selected = selected == null,
+                    ready = true,
+                    onClick = onAuto
                 )
-                ProviderKeySection(
-                    viewModel = viewModel,
-                    savedKeys = savedKeys,
-                    onKeysSaved = { savedKeys = viewModel.configuredProviders().toSet() }
-                )
-
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Voice replies", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "AURIX speaks responses aloud",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextSecondary
+                HorizontalDivider(color = Stroke, thickness = 0.6.dp)
+                ModelCatalog.providerIds().forEach { providerId ->
+                    Text(
+                        ModelCatalog.providerLabel(providerId).uppercase(),
+                        color = TextLo,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                    )
+                    options.filter { it.providerId == providerId }.forEach { option ->
+                        ModelRow(
+                            title = option.label,
+                            subtitle = option.note,
+                            selected = selected?.modelId == option.modelId &&
+                                selected?.providerId == option.providerId,
+                            ready = isReady(option),
+                            onClick = { onPick(option) }
                         )
-                    }
-                    Switch(
-                        checked = !ttsMuted,
-                        onCheckedChange = { enabled -> onTtsMutedChange(!enabled) }
-                    )
-                }
-
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Hands-free mode", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "Continuous conversation — the mic re-arms after each reply",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextSecondary
-                        )
-                    }
-                    Switch(
-                        checked = handsFreeActive,
-                        onCheckedChange = { onHandsFreeChange() }
-                    )
-                }
-
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Wake word", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "In hands-free, only \"Aurix …\" commands are acted on",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextSecondary
-                        )
-                    }
-                    Switch(
-                        checked = wakeWordEnabled,
-                        onCheckedChange = { viewModel.setWakeWordEnabled(it) }
-                    )
-                }
-
-                Spacer(Modifier.height(4.dp))
-                Text("SYSTEM TELEMETRY", style = MaterialTheme.typography.labelLarge)
-                val report = health.value
-                if (report == null) {
-                    Text("Reading sensors…", style = MaterialTheme.typography.labelSmall)
-                } else {
-                    HealthLine(
-                        "Power",
-                        listOfNotNull(
-                            report.batteryPercent?.let { "$it%" },
-                            if (report.charging == true) "charging" else null
-                        ).joinToString(" · ").ifBlank { "unavailable" }
-                    )
-                    HealthLine(
-                        "Network",
-                        when (report.online) {
-                            true -> "online"
-                            false -> "offline"
-                            null -> "unavailable"
-                        }
-                    )
-                    HealthLine(
-                        "Memory pressure",
-                        report.memoryPressurePercent?.let { "$it%" } ?: "unavailable"
-                    )
-                    HealthLine(
-                        "Storage low",
-                        when (report.lowStorage) {
-                            true -> "YES — action advised"
-                            false -> "ok"
-                            null -> "unavailable"
-                        }
-                    )
-                    HealthLine("Vector memory", report.vectorStoreId)
-                    HealthLine(
-                        "Voice",
-                        listOf(
-                            if (report.voiceInputAvailable) "STT ok" else "STT n/a",
-                            if (report.ttsAvailable) "TTS ok" else "TTS init"
-                        ).joinToString(" · ")
-                    )
-
-                    Spacer(Modifier.height(4.dp))
-                    Text("PROVIDERS", style = MaterialTheme.typography.labelLarge)
-                    if (report.providers.isEmpty()) {
-                        Text(
-                            "No provider keys provisioned — offline mode.",
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    } else {
-                        report.providers.forEach { p ->
-                            HealthLine(
-                                p.providerId,
-                                listOfNotNull(
-                                    p.state.lowercase(),
-                                    if (p.emaLatencyMs > 0) "${p.emaLatencyMs}ms avg" else null,
-                                    "${p.successCount}✓/${p.failureCount}✗".replace("✓", "ok").replace("✗", "err"),
-                                    if (!p.hasKeyConfigured) "no key" else null
-                                ).joinToString(" · ")
-                            )
-                        }
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Done", color = MaterialTheme.colorScheme.primary) }
+            TextButton(onClick = onKeys) { Text("Add API keys", color = Accent) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close", color = TextLo) }
         }
     )
 }
 
 @Composable
-private fun HealthLine(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = TextPrimary,
-            modifier = Modifier.width(110.dp)
-        )
-        Text(value, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+private fun ModelRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    ready: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = TextHi, fontSize = 15.sp)
+            Text(
+                if (ready) subtitle else "$subtitle · key needed",
+                color = if (ready) TextLo else Color(0xFFFFA000),
+                fontSize = 12.sp
+            )
+        }
+        if (selected) {
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = "Selected",
+                tint = Accent,
+                modifier = Modifier.size(18.dp)
+            )
+        }
     }
 }
+
+// ----------------------------------------------------------------------------
+// Provider keys
+// ----------------------------------------------------------------------------
+
+private val KEY_FIELDS = listOf(
+    "GROQ_API_KEY" to "Groq",
+    "GEMINI_API_KEY" to "Google Gemini",
+    "OPENROUTER_API_KEY" to "OpenRouter",
+    "CEREBRAS_API_KEY" to "Cerebras",
+    "MISTRAL_API_KEY" to "Mistral",
+    "OPENAI_API_KEY" to "OpenAI"
+)
 
 @Composable
-private fun ProviderKeySection(
-    viewModel: JarvisViewModel,
-    savedKeys: Set<String>,
-    onKeysSaved: () -> Unit
+private fun ProviderKeysDialog(
+    hasKey: (String) -> Boolean,
+    onSave: (Map<String, String>, (String) -> Unit) -> Unit,
+    onDismiss: () -> Unit
 ) {
-    var status by remember { mutableStateOf<String?>(null) }
-    var confirming by remember { mutableStateOf(false) }
-    var typedValues by remember {
-        mutableStateOf(
-            PROVIDER_KEY_FIELDS.associate { it.envName to "" }
-        )
-    }
+    val typed = remember { mutableStateMapOf<String, String>() }
+    var result by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
 
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("PROVIDER KEYS", style = MaterialTheme.typography.labelLarge)
-        Text(
-            "Paste keys below (stored encrypted, AndroidKeyStore — never plaintext).",
-            style = MaterialTheme.typography.labelSmall,
-            color = TextSecondary
-        )
-
-        PROVIDER_KEY_FIELDS.forEach { field ->
-            val isSaved = viewModel.hasKey(field.envName)
-            var revealed by remember { mutableStateOf(false) }
-            var fieldStatus by remember { mutableStateOf<String?>(null) }
-            OutlinedTextField(
-                value = typedValues[field.envName] ?: "",
-                onValueChange = {
-                    typedValues = typedValues + (field.envName to it)
-                    fieldStatus = null
-                },
-                label = { Text(if (isSaved) "${field.label} — saved" else field.label) },
-                placeholder = { Text(field.hint) },
-                singleLine = true,
-                visualTransformation = if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    Row {
-                        if (isSaved) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Panel,
+        title = { Text("API keys & routing", color = TextHi) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 430.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    "Add one or more keys. AURIX routes every request to the fastest " +
+                        "healthy provider and fails over automatically.",
+                    color = TextLo,
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(12.dp))
+                KEY_FIELDS.forEach { (env, label) ->
+                    OutlinedTextField(
+                        value = typed[env] ?: "",
+                        onValueChange = { typed[env] = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = {
                             Text(
-                                "SAVED",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
+                                if (hasKey(env)) "$label ✓ saved" else label,
+                                color = TextLo,
+                                fontSize = 12.sp
                             )
-                        }
-                        TextButton(onClick = { revealed = !revealed }) {
-                            Text(if (revealed) "Hide" else "Show", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    enabled = (typedValues[field.envName]?.isNotBlank() == true),
-                    onClick = {
-                        fieldStatus = viewModel.saveKeyForField(field.envName, typedValues[field.envName] ?: "")
-                        typedValues = typedValues + (field.envName to "")
-                        onKeysSaved()
-                    }
-                ) { Text("Save ${field.label} key") }
-                if (fieldStatus != null) {
-                    Text(
-                        fieldStatus!!,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (fieldStatus!!.contains("✓")) MaterialTheme.colorScheme.primary else Color(0xFFFF6B6B)
+                        },
+                        placeholder = { Text("paste key", color = TextLo, fontSize = 12.sp) },
+                        singleLine = true,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = PanelSoft,
+                            unfocusedContainerColor = PanelSoft,
+                            focusedIndicatorColor = Accent,
+                            unfocusedIndicatorColor = Stroke,
+                            focusedTextColor = TextHi,
+                            unfocusedTextColor = TextHi,
+                            cursorColor = Accent
+                        )
                     )
+                    Spacer(Modifier.height(8.dp))
+                }
+                result?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(it, color = TextHi, fontSize = 12.sp)
                 }
             }
-        }
-
-        if (status != null) {
-            Text(
-                status!!,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (status!!.contains("✓")) MaterialTheme.colorScheme.primary else Color(0xFFFF6B6B)
-            )
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        },
+        confirmButton = {
             TextButton(
-                enabled = !confirming,
+                enabled = !busy,
                 onClick = {
-                    confirming = true
-                    status = "Testing configured providers…"
-                    viewModel.testAndSaveKeys(typedValues) { result ->
-                        status = result
-                        onKeysSaved()
-                        confirming = false
+                    busy = true
+                    val payload = typed.filterValues { it.isNotBlank() }
+                    onSave(payload) { message ->
+                        result = message
+                        busy = false
                     }
                 }
-            ) { Text(if (confirming) "Testing…" else "Test providers") }
+            ) { Text(if (busy) "Testing…" else "Save & test", color = Accent) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close", color = TextLo) }
         }
-        Text(
-            if (savedKeys.isEmpty())
-                "⚠ No keys configured — AURIX runs offline only."
-            else "✓ ${savedKeys.size} provider(s) configured: ${savedKeys.joinToString(", ")}",
-            style = MaterialTheme.typography.labelSmall,
-            color = if (savedKeys.isEmpty()) Color(0xFFFF6B6B) else TextSecondary
-        )
-        Spacer(Modifier.height(4.dp))
-    }
+    )
 }
-
-private data class FieldSpec(
-    val label: String,
-    val envName: String,
-    val hint: String
-)
-
-private val PROVIDER_KEY_FIELDS = listOf(
-    FieldSpec("Gemini", "GEMINI_API_KEY", "AQ… / AIza…"),
-    FieldSpec("OpenAI", "OPENAI_API_KEY", "sk-…"),
-    FieldSpec("Groq", "GROQ_API_KEY", "gsk_…"),
-    FieldSpec("OpenRouter", "OPENROUTER_API_KEY", "sk-or-v1-…")
-)
