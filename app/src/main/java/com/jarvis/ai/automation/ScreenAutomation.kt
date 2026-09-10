@@ -7,6 +7,7 @@ import com.jarvis.ai.accessibility.JarvisAccessibilityService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -87,6 +88,92 @@ class ScreenAutomation(context: Context) {
             service.lockScreen()
             "Locking the screen, sir."
         }.getOrElse { "I could not lock the screen on this device, sir." }
+    }
+
+    /**
+     * Waits for [packageName] to come to the foreground and then presses its
+     * send button, trying stable resource ids first and visible labels second.
+     *
+     * Used to finish WhatsApp / SMS sends automatically instead of leaving the
+     * user to tap the arrow. Returns false when Accessibility is not granted,
+     * so the caller can fall back to a "tap send" instruction.
+     */
+    fun autoSend(packageName: String, viewIds: List<String>, labels: List<String>): Boolean {
+        val service = JarvisAccessibilityService.instance ?: return false
+        if (!isReady()) return false
+        scope.launch {
+            runCatching {
+                service.waitForPackage(packageName, timeoutMs = 6000)
+                delay(700)
+                val byId = viewIds.firstNotNullOfOrNull { id ->
+                    runCatching { service.tapById(id) }.getOrNull()?.takeIf { it.isSuccess }
+                }
+                if (byId == null) {
+                    labels.firstNotNullOfOrNull { label ->
+                        runCatching { service.tapByText(label) }.getOrNull()?.takeIf { it.isSuccess }
+                    }
+                }
+            }
+        }
+        return true
+    }
+
+    /**
+     * Opens a WhatsApp chat by its visible name and sends a message.
+     *
+     * Groups have no phone number, so the wa.me deep link cannot reach them.
+     * The only route is the app's own search box: search -> pick the chat ->
+     * type -> send. Each step waits for the next screen instead of blind
+     * delays, and every failure point simply stops the chain, leaving the user
+     * in WhatsApp with nothing sent rather than a message in the wrong chat.
+     *
+     * Returns false when Accessibility is off so the caller can fall back.
+     */
+    fun openChatAndSend(chatName: String, message: String): Boolean {
+        val service = JarvisAccessibilityService.instance ?: return false
+        if (!isReady()) return false
+        scope.launch {
+            runCatching {
+                if (!service.waitForPackage("com.whatsapp", timeoutMs = 8000).isSuccess) return@launch
+                delay(600)
+
+                // Search entry point: id first, magnifier label second.
+                val searchOpened = listOf(
+                    "com.whatsapp:id/menuitem_search",
+                    "com.whatsapp:id/search"
+                ).firstNotNullOfOrNull { id ->
+                    runCatching { service.tapById(id) }.getOrNull()?.takeIf { it.isSuccess }
+                } ?: runCatching { service.tapByText("Search") }.getOrNull()?.takeIf { it.isSuccess }
+                if (searchOpened == null) return@launch
+
+                delay(500)
+                if (!service.typeText(chatName).isSuccess) return@launch
+
+                // Wait for the chat row to appear, then open it.
+                if (!service.waitForText(chatName, timeoutMs = 5000).isSuccess) return@launch
+                delay(400)
+                if (!service.tapByText(chatName).isSuccess) return@launch
+
+                // Message field, then send.
+                if (!service.waitForId("com.whatsapp:id/entry", timeoutMs = 5000).isSuccess) {
+                    delay(800)
+                }
+                if (!service.typeInto(message, "com.whatsapp:id/entry").isSuccess) {
+                    if (!service.typeText(message).isSuccess) return@launch
+                }
+                delay(400)
+                val sent = listOf(
+                    "com.whatsapp:id/send",
+                    "com.whatsapp:id/send_container"
+                ).firstNotNullOfOrNull { id ->
+                    runCatching { service.tapById(id) }.getOrNull()?.takeIf { it.isSuccess }
+                }
+                if (sent == null) {
+                    runCatching { service.tapByText("Send") }
+                }
+            }
+        }
+        return true
     }
 
     /** Reads what is currently on screen, for "what's on my screen" requests. */
