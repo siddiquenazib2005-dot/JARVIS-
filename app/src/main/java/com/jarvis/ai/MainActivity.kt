@@ -1,27 +1,24 @@
 package com.jarvis.ai
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.graphics.Color
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.jarvis.ai.core.JarvisRuntime
+import com.jarvis.ai.onboarding.OnboardingPrefs
 import com.jarvis.ai.ui.screens.ChatScreen
+import com.jarvis.ai.ui.screens.OnboardingScreen
 import com.jarvis.ai.ui.theme.JarvisTheme
 
 class MainActivity : ComponentActivity() {
 
     private val runtime by lazy { JarvisRuntime.get(applicationContext) }
-
-    private val permissionsLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ -> }
 
     override fun onStart() {
         super.onStart()
@@ -39,29 +36,26 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
         )
         super.onCreate(savedInstanceState)
+
+        // Must run before the first composition so the gate below reads real state.
+        OnboardingPrefs.init(applicationContext)
+
         setContent {
             JarvisTheme {
-                ChatScreen()
+                // The old blind RequestMultiplePermissions batch is gone: it fired on
+                // every cold start, stacked system dialogs on top of the chat and
+                // ignored the result. The wizard now owns the whole flow, explains
+                // each permission, and also covers the three Settings-only accesses
+                // (Accessibility / notification listener / overlay) that the batch
+                // could never request.
+                var showOnboarding by remember { mutableStateOf(OnboardingPrefs.needsOnboarding) }
+
+                if (showOnboarding) {
+                    OnboardingScreen(onFinished = { showOnboarding = false })
+                } else {
+                    ChatScreen()
+                }
             }
         }
-        requestRuntimePermissions()
     }
-
-    private fun requestRuntimePermissions() {
-        val needed = buildList {
-            add(Manifest.permission.RECORD_AUDIO)
-            add(Manifest.permission.CALL_PHONE)
-            add(Manifest.permission.READ_CONTACTS)
-            add(Manifest.permission.SEND_SMS)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }.filterNot { granted(it) }
-        if (needed.isNotEmpty()) {
-            permissionsLauncher.launch(needed.toTypedArray())
-        }
-    }
-
-    private fun granted(permission: String): Boolean =
-        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 }
