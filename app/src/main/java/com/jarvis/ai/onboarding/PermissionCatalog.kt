@@ -59,13 +59,19 @@ data class PermissionItem(
     val required: Boolean,
     val kind: PermissionKind
 ) {
-    /** Live grant state. */
-    fun isGranted(context: Context): Boolean = when (kind) {
+    /**
+     * Live grant state.
+     *
+     * `kind` is captured into a local val first: Kotlin will not smart-cast a
+     * class property inside a lambda, so `runCatching { kind.status(...) }`
+     * does not compile without it.
+     */
+    fun isGranted(context: Context): Boolean = when (val current = kind) {
         is PermissionKind.Runtime -> ContextCompat.checkSelfPermission(
-            context, kind.permission
+            context, current.permission
         ) == PackageManager.PERMISSION_GRANTED
 
-        is PermissionKind.SpecialAccess -> runCatching { kind.status(context) }
+        is PermissionKind.SpecialAccess -> runCatching { current.status(context) }
             .getOrDefault(false)
     }
 }
