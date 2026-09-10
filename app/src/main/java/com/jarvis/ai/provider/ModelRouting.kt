@@ -58,6 +58,11 @@ object ModelRouting {
      * Falls back to the provider default when no specialised entry exists.
      */
     fun resolveModel(providerId: String, capability: Capability, providerDefault: String): String {
+        // A model pinned from the picker always wins for the provider it belongs to.
+        val pinned = RoutingPrefs.pinnedModel
+        if (!pinned.isNullOrBlank() && RoutingPrefs.pinnedProviderId == providerId) {
+            return pinned
+        }
         val entry = table[providerId]?.get(capability).orEmpty().firstOrNull()
         return entry ?: when (capability) {
             Capability.CODING -> codingFallback(providerId) ?: providerDefault
