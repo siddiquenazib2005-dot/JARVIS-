@@ -1,5 +1,6 @@
 package com.jarvis.ai.overlay
 
+import android.animation.ValueAnimator
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -12,12 +13,15 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.TextView
 import com.jarvis.ai.MainActivity
 import kotlin.math.abs
@@ -34,20 +38,82 @@ class FloatingAvatarService : Service() {
     private var windowManager: WindowManager? = null
     private var bubble: View? = null
 
+    /** Kept so the pulse animation can recolour the bubble without rebuilding it. */
+    private var bubbleSkin: GradientDrawable? = null
+
+    /** The single running pulse; replaced whenever the state changes. */
+    private var pulse: ValueAnimator? = null
+
+    private var state: AvatarState = AvatarState.IDLE
+
+    private val main = Handler(Looper.getMainLooper())
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        state = AvatarStateBus.state()
         startForeground(NOTIFICATION_ID, buildNotification())
         runCatching { showBubble() }
+
+        // The chat UI publishes states from the main thread, but a background
+        // tool chain may also publish, so every update is posted to main.
+        AvatarStateBus.observe { next ->
+            main.post { runCatching { applyState(next) } }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
+        AvatarStateBus.stopObserving()
+        main.removeCallbacksAndMessages(null)
+        runCatching { pulse?.cancel() }
+        pulse = null
         runCatching { bubble?.let { windowManager?.removeView(it) } }
         bubble = null
+        bubbleSkin = null
         super.onDestroy()
+    }
+
+    /**
+     * Switches the bubble to a new state: colours, glyph, pulse speed and the
+     * foreground notification text all follow [AvatarState].
+     *
+     * Only visuals change here. Touch handling, window params and the
+     * foreground-service lifecycle are deliberately left untouched.
+     */
+    private fun applyState(next: AvatarState) {
+        state = next
+        val view = bubble
+        val skin = bubbleSkin
+
+        if (view is TextView) view.text = next.glyph
+        skin?.colors = intArrayOf(next.innerColor, next.outerColor)
+
+        runCatching { pulse?.cancel() }
+        if (view == null) return
+
+        pulse = ValueAnimator.ofFloat(next.minScale, next.maxScale).apply {
+            duration = next.periodMs / 2
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            interpolator = AccelerateDecelerateInterpolator()
+            addUpdateListener { anim ->
+                val scale = anim.animatedValue as Float
+                view.scaleX = scale
+                view.scaleY = scale
+                // Idle stays dim so it does not compete with the app in front;
+                // active states brighten as they grow.
+                view.alpha = if (next == AvatarState.IDLE) 0.85f else 1f
+            }
+            start()
+        }
+
+        runCatching {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(NOTIFICATION_ID, buildNotification())
+        }
     }
 
     private fun showBubble() {
@@ -56,16 +122,19 @@ class FloatingAvatarService : Service() {
         windowManager = manager
 
         val size = (56 * resources.displayMetrics.density).toInt()
+        val skin = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            colors = intArrayOf(state.innerColor, state.outerColor)
+            setStroke((2 * resources.displayMetrics.density).toInt(), 0x55FFFFFF)
+        }
+        bubbleSkin = skin
+
         val view = TextView(this).apply {
-            text = "A"
+            text = state.glyph
             setTextColor(Color.WHITE)
             textSize = 20f
             gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                colors = intArrayOf(0xFFFF1744.toInt(), 0xFFFF6B00.toInt())
-                setStroke((2 * resources.displayMetrics.density).toInt(), 0x55FFFFFF)
-            }
+            background = skin
         }
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -122,6 +191,10 @@ class FloatingAvatarService : Service() {
 
         manager.addView(view, params)
         bubble = view
+
+        // Start whatever state was already published, so a bubble opened in the
+        // middle of a voice turn does not appear idle.
+        runCatching { applyState(state) }
     }
 
     private fun openAssistant() {
@@ -157,7 +230,7 @@ class FloatingAvatarService : Service() {
             Notification.Builder(this)
         }
         return builder
-            .setContentTitle("AURIX is on standby")
+            .setContentTitle("AURIX is " + state.label)
             .setContentText("Tap the bubble any time, sir.")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(open)
