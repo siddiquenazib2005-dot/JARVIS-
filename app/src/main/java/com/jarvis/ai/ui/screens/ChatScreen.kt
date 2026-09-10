@@ -258,6 +258,8 @@ fun ChatScreen(
         ProviderKeysDialog(
             hasKey = { viewModel.hasKey(it) },
             onSave = { typed, done -> viewModel.testAndSaveKeys(typed, done) },
+            backendUrl = viewModel.backendUrl,
+            onSaveBackend = { url, token, done -> viewModel.saveBackend(url, token, done) },
             onDismiss = { showSettings = false }
         )
     }
@@ -719,14 +721,29 @@ private val KEY_FIELDS = listOf(
 )
 
 @Composable
+private fun fieldColors() = TextFieldDefaults.colors(
+    focusedContainerColor = PanelSoft,
+    unfocusedContainerColor = PanelSoft,
+    focusedIndicatorColor = Accent,
+    unfocusedIndicatorColor = Stroke,
+    focusedTextColor = TextHi,
+    unfocusedTextColor = TextHi,
+    cursorColor = Accent
+)
+
+@Composable
 private fun ProviderKeysDialog(
     hasKey: (String) -> Boolean,
     onSave: (Map<String, String>, (String) -> Unit) -> Unit,
+    backendUrl: String,
+    onSaveBackend: (String, String, (String) -> Unit) -> Unit,
     onDismiss: () -> Unit
 ) {
     val typed = remember { mutableStateMapOf<String, String>() }
     var result by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var url by remember { mutableStateOf(backendUrl) }
+    var token by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -745,6 +762,57 @@ private fun ProviderKeysDialog(
                     fontSize = 12.sp
                 )
                 Spacer(Modifier.height(12.dp))
+                Text(
+                    "Your own backend (optional)",
+                    color = TextHi,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "Set a URL and the server owns the keys, routing and long-term " +
+                        "memory. Leave blank to route on this device.",
+                    color = TextLo,
+                    fontSize = 11.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Backend URL", color = TextLo, fontSize = 12.sp) },
+                    placeholder = {
+                        Text("https://aurix.onrender.com", color = TextLo, fontSize = 12.sp)
+                    },
+                    singleLine = true,
+                    colors = fieldColors()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("App token (optional)", color = TextLo, fontSize = 12.sp) },
+                    singleLine = true,
+                    colors = fieldColors()
+                )
+                TextButton(
+                    onClick = {
+                        busy = true
+                        onSaveBackend(url, token) { message ->
+                            result = message
+                            busy = false
+                        }
+                    }
+                ) { Text("Save & test backend", color = Accent, fontSize = 13.sp) }
+                HorizontalDivider(color = Stroke, thickness = 0.6.dp)
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "On-device provider keys",
+                    color = TextHi,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(6.dp))
                 KEY_FIELDS.forEach { (env, label) ->
                     OutlinedTextField(
                         value = typed[env] ?: "",
@@ -759,15 +827,7 @@ private fun ProviderKeysDialog(
                         },
                         placeholder = { Text("paste key", color = TextLo, fontSize = 12.sp) },
                         singleLine = true,
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = PanelSoft,
-                            unfocusedContainerColor = PanelSoft,
-                            focusedIndicatorColor = Accent,
-                            unfocusedIndicatorColor = Stroke,
-                            focusedTextColor = TextHi,
-                            unfocusedTextColor = TextHi,
-                            cursorColor = Accent
-                        )
+                        colors = fieldColors()
                     )
                     Spacer(Modifier.height(8.dp))
                 }
