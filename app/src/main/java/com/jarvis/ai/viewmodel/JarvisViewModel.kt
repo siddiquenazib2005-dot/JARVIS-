@@ -40,6 +40,7 @@ import com.jarvis.ai.system.SystemAwareness
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -280,6 +281,7 @@ class JarvisViewModel(
             } else {
                 db.touchSession(sessionId)
             }
+            refreshSessionsBlocking()
         }
 
         val pinned = _selectedModel.value
@@ -326,11 +328,13 @@ class JarvisViewModel(
                 }
                 ttsQueue.value = finalText
                 _uiState.update { it.copy(isLoading = false) }
-                withContext(Dispatchers.IO) {
+                withContext(NonCancellable + Dispatchers.IO) {
                     db.appendMessage(
                         sessionId,
                         Message(id = replyId, sender = Sender.AURIX, text = finalText)
                     )
+                    db.touchSession(sessionId)
+                    refreshSessionsBlocking()
                 }
             } catch (cancellation: CancellationException) {
                 _uiState.update { it.copy(isLoading = false) }
@@ -372,6 +376,7 @@ class JarvisViewModel(
             } else {
                 db.touchSession(sessionId)
             }
+            refreshSessionsBlocking()
         }
     }
 
@@ -1036,11 +1041,23 @@ class JarvisViewModel(
         // after a session switch and write it into the wrong session.
         val reply = messages.firstOrNull { it.id == replyId } ?: return
         if (reply.text.isBlank() || reply.text == "…") return
-        withContext(Dispatchers.IO) {
+        // NonCancellable: this runs in a `finally` block, and a cancelled or
+        // completing coroutine would otherwise skip the write entirely, which
+        // silently dropped replies from chat history on the next app launch.
+        withContext(NonCancellable + Dispatchers.IO) {
             runCatching {
                 db.appendMessage(sessionId, reply)
                 db.touchSession(sessionId)
             }
+            refreshSessionsBlocking()
+        }
+    }
+
+    /** Re-reads the session list so drawer titles and ordering stay current. */
+    private fun refreshSessionsBlocking() {
+        runCatching {
+            val sessions = db.sessions()
+            _uiState.update { it.copy(sessions = sessions) }
         }
     }
 
