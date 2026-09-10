@@ -1,30 +1,58 @@
-# Phase 1 Status — AURIX on JARVIS Codebase
+# AURIX — Phase 1 status
 
-Repository name remains **JARVIS** / **AURIX-Android-AI** depending on GitHub location, while the user-facing mobile app name is **AURIX**.
+**Version:** 1.3 (versionCode 4) · applicationId `com.aurix.ai`
 
-## Completed
+## Phase 1 — 100% complete
 
-- Existing Android source retained; no rewrite from scratch.
-- App display name changed to **AURIX**.
-- Red/black neon visual system applied.
-- Premium home hero added with animated assistant orb.
-- MYRA-style feature dashboard added:
-  - Communication Tools
-  - Call Tools
-  - Media Tools
-  - Device Tools
-  - Files & Photos
-  - Screen Automation
-  - Missions
-  - Search & Apps
-- GitHub Actions debug APK workflow added.
-- Build documentation added.
-- Internal package/class names kept as `com.jarvis.ai` / `Jarvis*` for compatibility and lower regression risk.
+| Item | Status |
+| --- | --- |
+| AURIX branding (name, red/black theme, icons) | ✅ |
+| ChatGPT-style chat interface | ✅ |
+| Sessions drawer (new / switch / delete chats) | ✅ |
+| Model picker (Auto + 13 curated models) | ✅ |
+| Multi-API routing with automatic failover | ✅ |
+| API key manager (6 providers, save + live test) | ✅ |
+| Offline device-command layer (works with zero keys) | ✅ |
+| MYRA feature surface at basic level | ✅ |
+| Voice input (mic, hands-free, wake word) | ✅ |
+| Markdown replies, streaming, stop generation | ✅ |
+| Suggestion prompts wired to real commands | ✅ |
+| Build pipeline (GitHub Actions debug APK) | ✅ |
+| Dead code / disabled tests removed | ✅ |
 
-## Next Phase 1 tasks
+## Interface
 
-- Replace launcher icons with AURIX red/black icon set.
-- Add real bottom navigation Home / Chat / Voice / Triggers / Settings.
-- Add permission onboarding cards for microphone, accessibility, notifications, contacts, SMS, phone.
-- Make dashboard cards execute real tool prompts.
-- Verify compile on Android Studio/GitHub Actions.
+Slim top bar (chats · model chip · new chat), full-width assistant turns with
+avatar, right-aligned user bubbles, rounded pill composer with mic + send,
+empty state with 8 tappable prompts.
+
+## Multi-API routing
+
+1. `RoutingPrefs` stores `Auto` or a pinned provider + model (persisted).
+2. `ProviderManager.selectPrimary()` honours the pin when a key exists,
+   otherwise scores providers: 45% success rate + 30% speed + 25% priority.
+3. `ModelRouting.resolveModel()` returns the pinned model for its provider.
+4. Dead / rate-limited / auth-failed providers are skipped and retried later,
+   so any number of free keys can be mixed.
+
+Supported keys: Groq, Gemini, OpenRouter, Cerebras, Mistral, OpenAI.
+
+## Offline command layer
+
+`QuickCommandRouter` + `DeviceActionPack` run before any network call, so
+device work never fails with "no AI provider is reachable". English and
+Hinglish phrasings are both matched.
+
+Covered basics: flashlight, battery, device report, volume/mute, media
+transport, alarms, timers, camera, gallery, files, share, maps navigation and
+nearby search, calls, dialler, call log, contact lookup, SOS, WhatsApp, SMS,
+email, web/YouTube search, open URL, open/list/uninstall apps, 17 settings
+shortcuts, app info, PC-bridge info.
+
+## Next: Phase 2 — real backend
+
+- Persistent conversation memory service + embeddings
+- Server-side tool execution and streaming relay
+- Accessibility-driven screen automation UI
+- Missions (multi-step autonomous tasks)
+- Notification/OTP reader, PC Connect pairing UI
