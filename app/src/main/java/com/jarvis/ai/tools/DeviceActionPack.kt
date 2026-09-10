@@ -33,21 +33,45 @@ class DeviceActionPack(context: Context) {
     // Launching helpers
     // ------------------------------------------------------------------
 
+    /**
+     * Item 3: the reason the most recent [launch] failed.
+     *
+     * Every action used to collapse three very different failures -- no app
+     * installed, permission denied, malformed intent -- into one flat "I could
+     * not do that" line, which made real bugs indistinguishable from a missing
+     * app. The reason is captured here and appended by [fail].
+     */
+    private var lastFailure: String? = null
+
     private fun launch(intent: Intent): Boolean = try {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         app.startActivity(intent)
+        lastFailure = null
         true
     } catch (e: ActivityNotFoundException) {
+        lastFailure = "no app on this phone handles that"
         false
     } catch (e: SecurityException) {
+        lastFailure = "Android blocked it for permissions"
         false
     } catch (e: Exception) {
+        lastFailure = e.message?.takeIf { it.isNotBlank() }?.take(120)
+            ?: e::class.java.simpleName
         false
     }
 
     private fun ok(text: String) = text
 
-    private fun fail(what: String) = "I could not $what on this device, sir."
+    /** Honest failure line: always says WHY when the cause is known. */
+    private fun fail(what: String): String {
+        val reason = lastFailure
+        lastFailure = null
+        return if (reason.isNullOrBlank()) {
+            "I could not $what on this device, sir."
+        } else {
+            "I could not $what, sir - $reason."
+        }
+    }
 
     // ------------------------------------------------------------------
     // Apps & search
