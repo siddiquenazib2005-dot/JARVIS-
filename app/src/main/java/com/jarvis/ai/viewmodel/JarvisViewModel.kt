@@ -24,7 +24,11 @@ import com.jarvis.ai.orchestrator.ToolExecutor
 import com.jarvis.ai.presence.PresenceGate
 import com.jarvis.ai.proactive.ProactiveEngine
 import com.jarvis.ai.provider.Capability
+import com.jarvis.ai.provider.ModelCatalog
+import com.jarvis.ai.provider.ModelOption
 import com.jarvis.ai.provider.ProviderRegistry
+import com.jarvis.ai.provider.RoutingPrefs
+import com.jarvis.ai.tools.QuickCommandRouter
 import com.jarvis.ai.service.AudioLevelEngine
 import com.jarvis.ai.service.SpeechRecognitionManager
 import com.jarvis.ai.service.SentenceParser
@@ -51,6 +55,7 @@ import kotlinx.coroutines.withContext
  * this class never touches provider credentials or endpoints directly.
  */
 class JarvisViewModel(
+    private val appContext: Context,
     private val runtime: JarvisRuntime,
     private val db: ChatDb,
     private val tts: TtsEngine,
@@ -112,6 +117,14 @@ class JarvisViewModel(
 
     private val sentenceParser = SentenceParser()
 
+    /** Offline device-command layer. Runs before any provider call. */
+    private val quickCommands = QuickCommandRouter(appContext)
+
+    private val _selectedModel = MutableStateFlow<ModelOption?>(null)
+
+    /** Currently pinned model, or null while routing is automatic. */
+    val selectedModel: StateFlow<ModelOption?> = _selectedModel.asStateFlow()
+
     private val ttsQueue: MutableStateFlow<String?> = MutableStateFlow(null)
 
     private val healthReporter by lazy {
@@ -124,6 +137,9 @@ class JarvisViewModel(
     }
 
     init {
+        RoutingPrefs.init(appContext)
+        _selectedModel.value = ModelCatalog.find(RoutingPrefs.pinnedProviderId, RoutingPrefs.pinnedModel)
+
         viewModelScope.launch(Dispatchers.IO) {
             var sessions = db.sessions()
             if (sessions.isEmpty()) {
@@ -217,6 +233,36 @@ class JarvisViewModel(
         }
     }
 
+    /**
+     * Persists a user turn plus a locally generated reply without touching any
+     * AI provider. Used by the offline quick-command layer.
+     */
+    private fun handleLocally(sessionId: String, input: String, reply: String) {
+        clearNotice()
+        val userMessage = Message(sender = Sender.USER, text = input)
+        val replyMessage = Message(sender = Sender.AURIX, text = reply)
+        _uiState.update {
+            it.copy(
+                messages = it.messages + userMessage + replyMessage,
+                isLoading = false,
+                latency = LatencyInfo()
+            )
+        }
+        ttsQueue.value = reply
+        viewModelScope.launch(Dispatchers.IO) {
+            db.appendMessage(sessionId, userMessage)
+            db.appendMessage(sessionId, replyMessage)
+            val firstTurn = _uiState.value.messages.count {
+                it.sender == Sender.USER && !it.text.startsWith(GREETING_MARK)
+            } <= 1
+            if (firstTurn) {
+                db.renameSession(sessionId, input.take(TITLE_MAX_LENGTH))
+            } else {
+                db.touchSession(sessionId)
+            }
+        }
+    }
+
     fun send(rawInput: String) {
         pendingConfirmation = null
         _uiState.update { it.copy(hasPendingConfirmation = false) }
@@ -231,11 +277,49 @@ class JarvisViewModel(
         dispatchToOrchestrator(pending, confirmed = true)
     }
 
+    /** Pins a specific provider/model pair for every future request. */
+    fun selectModel(option: ModelOption?) {
+        if (option == null) {
+            RoutingPrefs.clear()
+            _selectedModel.value = null
+            _uiState.update { it.copy(notice = "Routing set to Auto — AURIX will pick the best live provider.") }
+            return
+        }
+        RoutingPrefs.pin(option.providerId, option.modelId)
+        _selectedModel.value = option
+        val configured = runtime.secureStore.contains(option.envVarName)
+        _uiState.update {
+            it.copy(
+                notice = if (configured) {
+                    "Model set to ${option.label} (${option.providerLabel})."
+                } else {
+                    "${option.label} selected — add your ${option.providerLabel} key in Settings to use it."
+                }
+            )
+        }
+    }
+
+    /** Every model the picker can offer. */
+    val availableModels: List<ModelOption> get() = ModelCatalog.options
+
+    /** True when a key exists for the provider backing this model. */
+    fun isModelReady(option: ModelOption): Boolean =
+        runCatching { runtime.secureStore.contains(option.envVarName) }.getOrDefault(false)
+
     private fun dispatchToOrchestrator(text: String, confirmed: Boolean) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || _uiState.value.isLoading) return
         val sessionId = _uiState.value.activeSessionId
         if (sessionId.isBlank()) return
+
+        // Offline fast path: device commands must work with zero API keys.
+        if (!confirmed) {
+            val local = runCatching { quickCommands.handle(trimmed) }.getOrNull()
+            if (!local.isNullOrBlank()) {
+                handleLocally(sessionId, trimmed, local)
+                return
+            }
+        }
 
         clearNotice()
         val userMessage = Message(sender = Sender.USER, text = trimmed)
@@ -938,6 +1022,7 @@ class JarvisViewModel(
                 val appContext = context.applicationContext
                 val runtime = JarvisRuntime.get(appContext)
                 JarvisViewModel(
+                    appContext = appContext,
                     runtime = runtime,
                     db = ChatDb(appContext),
                     tts = TtsEngine(appContext),
