@@ -455,17 +455,6 @@ class DeviceActionPack(context: Context) {
 
     fun openMaps(): String = findNearby("")
 
-    // ------------------------------------------------------------------
-    // PC connect
-    // ------------------------------------------------------------------
-
-    fun pcBridgeInfo(port: Int): String = buildString {
-        append("PC Connect bridge, sir:\n")
-        append("• Listening port: $port\n")
-        append("• Connect from your PC on the same Wi-Fi\n")
-        append("• Pair from Settings → PC Connect")
-    }
-
     /** Opens the app's own info screen (permissions, storage, force stop). */
     fun openAppInfo(): String {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
