@@ -203,9 +203,30 @@ class QuickCommandRouter(context: Context) {
         }
 
         // ---------- SOS ----------
-        if (matches(text, "sos", "emergency help", "bachao")) return actions.sos(null)
+        // Setup must be checked before the bare "sos" trigger, otherwise
+        // "set sos contact papa" would fire an actual emergency message.
+        afterAny(
+            text,
+            "set sos contact ", "sos contact ", "emergency contact ", "sos number "
+        )?.let { who ->
+            val target = who.removePrefix("to ").removePrefix("is ").trim()
+            if (target.isNotBlank() && target.length <= 40) return actions.setSosContact(target)
+        }
+        if (matches(text, "sos", "emergency help", "bachao")) return actions.sos()
 
         // ---------- Messaging ----------
+        // Group phrasing first: groups have no number, so they need the
+        // search-and-send path instead of a wa.me link.
+        afterAny(text, "whatsapp group ", "group message ", "message group ")?.let { rest ->
+            val name = rest.substringBefore(" saying ")
+                .substringBefore(" that ")
+                .substringBefore(" bolo ")
+                .trim()
+            val body = afterAny(rest, " saying ", " that ", " bolo ").orEmpty().trim()
+            if (name.isNotBlank() && body.isNotBlank()) {
+                return actions.whatsappGroup(name, body)
+            }
+        }
         parseMessage(text, listOf("whatsapp"))?.let { (who, body) ->
             return actions.whatsapp(who, body)
         }
