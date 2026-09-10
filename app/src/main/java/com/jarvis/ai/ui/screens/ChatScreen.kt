@@ -38,6 +38,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -78,8 +80,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarvis.ai.data.model.Message
 import com.jarvis.ai.data.model.Sender
+import com.jarvis.ai.onboarding.PermissionCatalog
 import com.jarvis.ai.provider.ModelCatalog
 import com.jarvis.ai.provider.ModelOption
+import com.jarvis.ai.ui.components.AccessWarningBar
 import com.jarvis.ai.ui.components.markdown.MarkdownText
 import com.jarvis.ai.viewmodel.JarvisViewModel
 import kotlinx.coroutines.launch
@@ -135,6 +139,31 @@ fun ChatScreen(
     var input by rememberSaveable { mutableStateOf("") }
     var showModels by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showPermissions by rememberSaveable { mutableStateOf(false) }
+    var showMissions by rememberSaveable { mutableStateOf(false) }
+
+    // Poll access state: Accessibility / notification / overlay toggles live in
+    // system Settings and cannot notify the app, and auto-send silently no-ops
+    // when they are off. This keeps the warning bar honest.
+    val context = LocalContext.current
+    var accessTick by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(2000)
+            accessTick++
+        }
+    }
+    val missingRequired = remember(accessTick) { PermissionCatalog.missingRequired(context) }
+
+    if (showPermissions) {
+        OnboardingScreen(reviewMode = true, onFinished = { showPermissions = false })
+        return
+    }
+
+    if (showMissions) {
+        MissionsScreen(onClose = { showMissions = false })
+        return
+    }
 
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -177,6 +206,14 @@ fun ChatScreen(
                     onSettings = {
                         showSettings = true
                         scope.launch { drawerState.close() }
+                    },
+                    onPermissions = {
+                        showPermissions = true
+                        scope.launch { drawerState.close() }
+                    },
+                    onMissions = {
+                        showMissions = true
+                        scope.launch { drawerState.close() }
                     }
                 )
             }
@@ -197,6 +234,15 @@ fun ChatScreen(
 
             state.notice?.let { notice ->
                 NoticeBar(notice) { viewModel.clearNotice() }
+            }
+
+            if (missingRequired.isNotEmpty()) {
+                AccessWarningBar(
+                    text = missingRequired.first().title + " is OFF — " +
+                        missingRequired.first().unlocks.substringBefore(" · ") +
+                        " won't work.",
+                    onFix = { showPermissions = true }
+                )
             }
 
             Box(modifier = Modifier.weight(1f)) {
@@ -546,7 +592,9 @@ private fun SessionDrawer(
     onSelect: (String) -> Unit,
     onDelete: (String) -> Unit,
     onNew: () -> Unit,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    onPermissions: () -> Unit,
+    onMissions: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
         Text("AURIX", color = TextHi, fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -606,6 +654,30 @@ private fun SessionDrawer(
             Icon(Icons.Filled.Settings, contentDescription = null, tint = TextLo)
             Spacer(Modifier.width(10.dp))
             Text("API keys & routing", color = TextHi, fontSize = 15.sp)
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClick = onPermissions)
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Security, contentDescription = null, tint = TextLo)
+            Spacer(Modifier.width(10.dp))
+            Text("Permissions & access", color = TextHi, fontSize = 15.sp)
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClick = onMissions)
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = TextLo)
+            Spacer(Modifier.width(10.dp))
+            Text("Missions", color = TextHi, fontSize = 15.sp)
         }
     }
 }
