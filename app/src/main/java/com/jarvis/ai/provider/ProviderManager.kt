@@ -54,6 +54,18 @@ class ProviderManager(
      * Providers without history get a neutral prior so fresh pools still route.
      */
     fun selectPrimary(capability: Capability): ProviderConfig? {
+        // Honour an explicit pin from the model picker whenever that provider
+        // still has a usable key; otherwise fall through to automatic scoring so
+        // a dead pinned provider never blocks the whole assistant.
+        RoutingPrefs.pinnedProviderId?.let { pinnedId ->
+            val pinned = ProviderRegistry.byId(pinnedId)
+            if (pinned != null &&
+                capability in pinned.capabilities &&
+                keys.pick(pinned.providerId, nowMs()) != null
+            ) {
+                return pinned
+            }
+        }
         val candidates = ProviderRegistry
             .enabledFor(capability)
             .filter { it.providerType == ProviderType.LLM }
