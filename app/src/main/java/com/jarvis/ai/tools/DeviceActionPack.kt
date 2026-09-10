@@ -9,11 +9,11 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.BatteryManager
 import android.provider.AlarmClock
-import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Settings
 import android.view.KeyEvent
 import androidx.core.content.ContextCompat
+import com.jarvis.ai.automation.ScreenAutomation
 
 /**
  * Basic-level implementation of the whole MYRA feature surface.
@@ -27,6 +27,7 @@ import androidx.core.content.ContextCompat
 class DeviceActionPack(context: Context) {
 
     private val app: Context = context.applicationContext
+    private val screen = ScreenAutomation(context)
 
     // ------------------------------------------------------------------
     // Launching helpers
@@ -136,7 +137,21 @@ class DeviceActionPack(context: Context) {
     // Communication
     // ------------------------------------------------------------------
 
+    /**
+     * WhatsApp a person.
+     *
+     * Ambiguity is surfaced instead of guessed: messaging the wrong "Papa" is
+     * far worse than one clarifying question.
+     */
     fun whatsapp(contact: String, message: String): String {
+        when (val lookup = ContactResolver.lookup(app, contact)) {
+            is ContactLookup.Ambiguous -> return ambiguityPrompt(contact, lookup.matches)
+            is ContactLookup.None -> if (ContactResolver.hasPermission(app)) {
+                // Named target that matched nobody is very likely a group chat.
+                return whatsappGroup(contact, message)
+            }
+            else -> Unit
+        }
         val number = resolveNumber(contact)
         val text = Uri.encode(message)
         val digits = number?.filter { it.isDigit() }
@@ -147,9 +162,24 @@ class DeviceActionPack(context: Context) {
         }
         val intent = Intent(Intent.ACTION_VIEW, uri).setPackage("com.whatsapp")
         if (launch(intent)) {
+            if (digits.isNullOrBlank()) {
+                return ok("WhatsApp is open with your message ready, sir. Pick the contact.")
+            }
+            // Finish the send automatically when Accessibility is available;
+            // otherwise the user still gets a pre-filled chat to tap.
+            val automated = screen.autoSend(
+                packageName = "com.whatsapp",
+                viewIds = listOf(
+                    "com.whatsapp:id/send",
+                    "com.whatsapp:id/bottom_sheet_send_button",
+                    "com.whatsapp:id/send_container"
+                ),
+                labels = listOf("Send", "send")
+            )
             return ok(
-                if (!digits.isNullOrBlank()) "WhatsApp chat with $contact is open — tap send, sir."
-                else "WhatsApp is open with your message ready, sir. Pick the contact."
+                if (automated) "Sending \"$message\" to $contact on WhatsApp now, sir."
+                else "WhatsApp chat with $contact is open — tap send, sir. " +
+                    "Enable AURIX in Accessibility settings and I'll press send myself."
             )
         }
         return if (launch(Intent(Intent.ACTION_VIEW, uri))) {
@@ -157,13 +187,53 @@ class DeviceActionPack(context: Context) {
         } else fail("reach WhatsApp")
     }
 
+    /**
+     * WhatsApp a group (or any chat) by its visible name.
+     *
+     * Groups have no phone number, so wa.me cannot address them at all. The
+     * only path is WhatsApp's own search box, driven through Accessibility.
+     */
+    fun whatsappGroup(chatName: String, message: String): String {
+        val name = chatName.trim()
+        if (name.isBlank()) return "Which chat should I message, sir?"
+        if (message.isBlank()) return "What should I send to $name, sir?"
+
+        val launcher = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .setPackage("com.whatsapp")
+        if (!launch(launcher)) return fail("reach WhatsApp")
+
+        return if (screen.openChatAndSend(name, message)) {
+            ok("Searching WhatsApp for \"$name\" and sending your message, sir.")
+        } else {
+            ok(
+                "WhatsApp is open, sir — I need Accessibility to search for \"$name\" " +
+                    "and send it myself. Turn it on from menu → Permissions & access."
+            )
+        }
+    }
+
     fun sms(contact: String, message: String): String {
+        when (val lookup = ContactResolver.lookup(app, contact)) {
+            is ContactLookup.Ambiguous -> return ambiguityPrompt(contact, lookup.matches)
+            else -> Unit
+        }
         val number = resolveNumber(contact) ?: contact
         val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$number"))
             .putExtra("sms_body", message)
-        return if (launch(intent)) {
-            ok("SMS to $contact is drafted — tap send, sir.")
-        } else fail("open the messaging app")
+        if (!launch(intent)) return fail("open the messaging app")
+        val automated = screen.autoSend(
+            packageName = "com.google.android.apps.messaging",
+            viewIds = listOf(
+                "com.google.android.apps.messaging:id/send_message_button_icon",
+                "com.google.android.apps.messaging:id/send_message_button"
+            ),
+            labels = listOf("Send SMS", "Send message", "Send")
+        )
+        return ok(
+            if (automated) "Sending that SMS to $contact now, sir."
+            else "SMS to $contact is drafted — tap send, sir."
+        )
     }
 
     fun email(to: String, subject: String, body: String): String {
@@ -175,6 +245,10 @@ class DeviceActionPack(context: Context) {
     }
 
     fun call(contact: String): String {
+        when (val lookup = ContactResolver.lookup(app, contact)) {
+            is ContactLookup.Ambiguous -> return ambiguityPrompt(contact, lookup.matches)
+            else -> Unit
+        }
         val number = resolveNumber(contact) ?: contact.filter { it.isDigit() || it == '+' }
         if (number.isBlank()) return "I could not find a number for $contact, sir."
         val granted = ContextCompat.checkSelfPermission(
@@ -195,46 +269,79 @@ class DeviceActionPack(context: Context) {
         return if (launch(intent)) ok("Call log open, sir.") else fail("open the call log")
     }
 
-    fun contactLookup(name: String): String {
-        val number = resolveNumber(name)
-            ?: return "I found no contact matching \"$name\", sir."
-        return "$name — $number"
+    fun contactLookup(name: String): String =
+        when (val lookup = ContactResolver.lookup(app, name)) {
+            is ContactLookup.RawNumber -> "That is already a number, sir: ${lookup.number}"
+            is ContactLookup.Single ->
+                lookup.match.name + " — " + lookup.match.number +
+                    if (lookup.match.label.isNotBlank()) " (${lookup.match.label})" else ""
+            is ContactLookup.Ambiguous ->
+                "I found ${lookup.matches.size} matches for \"$name\", sir:\n" +
+                    lookup.matches.joinToString("\n") { "• " + it.name + " — " + it.number }
+            is ContactLookup.None -> "I found no contact matching \"$name\", sir — ${lookup.reason}."
+        }
+
+    /** Saves who to alert in an emergency. */
+    fun setSosContact(contact: String): String {
+        when (val lookup = ContactResolver.lookup(app, contact)) {
+            is ContactLookup.RawNumber -> {
+                SosStore.save(app, contact.trim(), lookup.number)
+                return ok("SOS contact saved: ${lookup.number}, sir.")
+            }
+            is ContactLookup.Single -> {
+                SosStore.save(app, lookup.match.name, lookup.match.number)
+                return ok("SOS contact saved: ${lookup.match.name}, sir.")
+            }
+            is ContactLookup.Ambiguous -> return ambiguityPrompt(contact, lookup.matches)
+            is ContactLookup.None ->
+                return "I could not find \"$contact\", sir — ${lookup.reason}. " +
+                    "Give me the number instead."
+        }
     }
 
-    /** Emergency broadcast: drafts one SMS to the stored SOS contact. */
-    fun sos(sosContact: String?): String {
-        val message = "SOS! I need help. Sent by AURIX."
-        if (sosContact.isNullOrBlank()) {
+    /** Human-readable ambiguity question, used by every messaging path. */
+    private fun ambiguityPrompt(query: String, matches: List<ContactMatch>): String =
+        "I found more than one \"$query\", sir — which one?\n" +
+            matches.joinToString("\n") { "• " + ContactResolver.describe(it) } +
+            "\nSay the full name, or give me the number."
+
+    /**
+     * Emergency message to the saved SOS contact, with location when available.
+     *
+     * Falls back to the stored contact when the caller passes nothing, which is
+     * what every caller actually does.
+     */
+    fun sos(sosContact: String? = null): String {
+        val target = sosContact?.takeIf { it.isNotBlank() }
+            ?: SosStore.contactNumber(app)
+        val link = SosStore.locationLink(app)
+        val message = "SOS! I need help. Sent by AURIX." +
+            if (link != null) " My location: $link" else ""
+
+        if (target.isNullOrBlank()) {
             val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:"))
                 .putExtra("sms_body", message)
             return if (launch(intent)) {
-                "No SOS contact is saved yet, sir — I opened a message so you can pick one."
+                "No SOS contact is saved yet, sir — I opened a message so you can pick one. " +
+                    "Say \"set sos contact <name>\" and next time I'll send it straight away."
             } else fail("start an SOS message")
         }
-        return sms(sosContact, message)
+        val name = SosStore.contactName(app) ?: target
+        val result = sms(target, message)
+        return if (link == null) {
+            result + " Location was unavailable, so I sent the alert without it."
+        } else result.replace(target, name)
     }
 
-    private fun resolveNumber(contact: String): String? {
-        val query = contact.trim()
-        if (query.isBlank()) return null
-        if (query.count { it.isDigit() } >= 6) return query
-        val granted = ContextCompat.checkSelfPermission(
-            app, android.Manifest.permission.READ_CONTACTS
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (!granted) return null
-        val uri = Uri.withAppendedPath(
-            ContactsContract.CommonDataKinds.Phone.CONTENT_FILTER_URI, Uri.encode(query)
-        )
-        return runCatching {
-            app.contentResolver.query(
-                uri,
-                arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
-                null, null, null
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0) else null
-            }
-        }.getOrNull()
-    }
+    /**
+     * Single number for a spoken name.
+     *
+     * Now delegates to [ContactResolver], which scores candidates instead of
+     * taking the provider's first row. Callers that care about ambiguity check
+     * [ContactResolver.lookup] themselves before reaching here.
+     */
+    private fun resolveNumber(contact: String): String? =
+        ContactResolver.bestNumber(app, contact)
 
     // ------------------------------------------------------------------
     // Media
