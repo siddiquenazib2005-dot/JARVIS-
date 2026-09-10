@@ -122,6 +122,7 @@ class JarvisViewModel(
 
     /** Offline device-command layer. Runs before any provider call. */
     private val quickCommands = QuickCommandRouter(appContext)
+    private val imageGen = com.jarvis.ai.tools.ImageGenerator(appContext)
 
     private val _selectedModel = MutableStateFlow<ModelOption?>(null)
 
@@ -142,6 +143,14 @@ class JarvisViewModel(
     init {
         RoutingPrefs.init(appContext)
         BackendPrefs.init(appContext)
+
+        // Item 4: screen gestures run fire-and-forget on a background scope,
+        // so their real outcome arrives late. When one genuinely fails after
+        // retries, the automation layer pushes a follow-up line here instead
+        // of letting the optimistic acknowledgement stand as a lie.
+        com.jarvis.ai.automation.AutomationFeedback.observe { line ->
+            appendAssistantLine(line)
+        }
         _selectedModel.value = ModelCatalog.find(RoutingPrefs.pinnedProviderId, RoutingPrefs.pinnedModel)
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -380,6 +389,62 @@ class JarvisViewModel(
         }
     }
 
+    /**
+     * Item 9: text to image. Kept separate from [handleLocally] because the
+     * provider call can take many seconds, so the user message and the typing
+     * state must land immediately and the reply must arrive afterwards.
+     */
+    private fun generateImage(sessionId: String, input: String, prompt: String) {
+        clearNotice()
+        val userMessage = Message(sender = Sender.USER, text = input)
+        _uiState.update {
+            it.copy(
+                messages = it.messages + userMessage,
+                isLoading = true,
+                latency = LatencyInfo()
+            )
+        }
+        viewModelScope.launch {
+            val reply = withContext(Dispatchers.IO) {
+                runCatching { imageGen.generate(prompt) }
+                    .getOrElse { "Image generation failed, sir: " + (it.message ?: "unknown error") }
+            }
+            val replyMessage = Message(sender = Sender.AURIX, text = reply)
+            _uiState.update {
+                it.copy(messages = it.messages + replyMessage, isLoading = false)
+            }
+            ttsQueue.value = reply
+            withContext(Dispatchers.IO) {
+                db.appendMessage(sessionId, userMessage)
+                db.appendMessage(sessionId, replyMessage)
+                val firstTurn = _uiState.value.messages.count {
+                    it.sender == Sender.USER && !it.text.startsWith(GREETING_MARK)
+                } <= 1
+                if (firstTurn) {
+                    db.renameSession(sessionId, input.take(TITLE_MAX_LENGTH))
+                } else {
+                    db.touchSession(sessionId)
+                }
+                refreshSessionsBlocking()
+            }
+        }
+    }
+
+    /**
+     * Appends a standalone AURIX line with no matching user turn, then
+     * persists it. Used by late-arriving screen-automation reports (item 4).
+     */
+    private fun appendAssistantLine(text: String) {
+        val sessionId = _uiState.value.activeSessionId
+        val message = Message(sender = Sender.AURIX, text = text)
+        _uiState.update { it.copy(messages = it.messages + message) }
+        if (sessionId.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            db.appendMessage(sessionId, message)
+            db.touchSession(sessionId)
+        }
+    }
+
     fun send(rawInput: String) {
         pendingConfirmation = null
         _uiState.update { it.copy(hasPendingConfirmation = false) }
@@ -430,8 +495,19 @@ class JarvisViewModel(
         if (sessionId.isBlank()) return
 
         // Offline fast path: device commands must work with zero API keys.
+        //
+        // The router now reports its own failures as text, so no runCatching
+        // here: swallowing the exception is what made feature taps look dead.
+        // A blank/null result means "not a device command" and legitimately
+        // falls through to the AI path below.
         if (!confirmed) {
-            val local = runCatching { quickCommands.handle(trimmed) }.getOrNull()
+            // Item 9: image requests are network work, so they get their own
+            // async path instead of blocking the main thread inside the router.
+            quickCommands.imagePrompt(trimmed)?.let { prompt ->
+                generateImage(sessionId, trimmed, prompt)
+                return
+            }
+            val local = quickCommands.handle(trimmed)
             if (!local.isNullOrBlank()) {
                 handleLocally(sessionId, trimmed, local)
                 return
