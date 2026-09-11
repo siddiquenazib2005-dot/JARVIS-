@@ -8,6 +8,13 @@ import com.jarvis.ai.notifications.AurixNotificationListener
 import com.jarvis.ai.notifications.NotificationStore
 import com.jarvis.ai.overlay.FloatingAvatarService
 
+/** A parsed "send email" turn. Parsing only -- no network work here. */
+data class EmailRequest(
+    val to: String,
+    val subject: String,
+    val body: String
+)
+
 /**
  * Deterministic, offline command layer that runs BEFORE any AI provider.
  *
@@ -37,11 +44,31 @@ class QuickCommandRouter(context: Context) {
      * at all -- the user saw a dead button. Now the error itself is the reply.
      */
     fun handle(rawInput: String): String? =
-        runCatching { dispatch(rawInput) }.getOrElse { error ->
+        runCatching { selfCheckReply(rawInput) ?: dispatch(rawInput) }.getOrElse { error ->
             val reason = error.message?.takeIf { it.isNotBlank() }
                 ?: error::class.java.simpleName
-            "That command failed on the device, sir: $reason"
+            // Real-time feed for the health agent: every silently-failed
+            // command becomes evidence the next self-check can report.
+            com.jarvis.ai.diagnostics.DiagnosticsLog.record("command", reason)
+            // Brain step 4: the failure is still reported, but it is TAGGED so
+            // the caller knows the regex layer did not actually satisfy the
+            // user. An untagged reply means "done, stop here"; a tagged one
+            // means "I tried and failed -- let the brain have a turn too".
+            SOFT_FAIL_MARK + "That command failed on the device, sir: $reason"
         }
+
+    companion object {
+        /** Prefix marking a recognised-but-failed command. Never shown raw. */
+        const val SOFT_FAIL_MARK = "\u0007softfail:"
+
+        /** True when [handle] matched a command but could not complete it. */
+        fun isSoftFail(reply: String?): Boolean =
+            reply != null && reply.startsWith(SOFT_FAIL_MARK)
+
+        /** Strips the marker for display. */
+        fun cleanFailure(reply: String): String =
+            reply.removePrefix(SOFT_FAIL_MARK).trim()
+    }
 
     /**
      * Item 9 detection seam. Image generation is a network call, so it must
@@ -63,6 +90,52 @@ class QuickCommandRouter(context: Context) {
         if (!startsWithAny(text, *markers.toTypedArray())) return null
         val subject = afterAny(text, *markers.toTypedArray())?.trim().orEmpty()
         return subject.takeIf { it.length in 2..400 }
+    }
+
+    /**
+     * Parses a "send email" turn without performing any network work.
+     *
+     * Same seam as [imagePrompt]: SMTP is blocking IO, so the router only
+     * PARSES here and the caller does the sending off the main thread. The
+     * compose-intent path in [DeviceActionPack.email] stays reachable as the
+     * fallback when SMTP credentials are absent.
+     */
+    fun emailRequest(rawInput: String): EmailRequest? {
+        val text = normalise(rawInput)
+        val markers = arrayOf(
+            "send email", "send an email", "send a mail", "email karo",
+            "mail karo", "compose email", "email bhejo", "mail bhejo"
+        )
+        if (!matches(text, *markers)) return null
+        val to = afterAny(text, " to ")
+            .orEmpty()
+            .substringBefore(" saying ")
+            .substringBefore(" subject ")
+            .trim()
+            // Speech input renders "@" as " at " and "." as " dot ".
+            .replace(" at ", "@")
+            .replace(" dot ", ".")
+            .replace(" ", "")
+        val subject = afterAny(text, " subject ")?.substringBefore(" saying ")?.trim().orEmpty()
+        val body = afterAny(text, " saying ", " that ", " body ").orEmpty().trim()
+        if (to.isBlank()) return null
+        return EmailRequest(to = to, subject = subject, body = body)
+    }
+
+    /**
+     * Detects "what is in my last photo"-style turns. Returns the question to
+     * ask the vision model, or null when this is not a photo request.
+     */
+    fun lastPhotoQuestion(rawInput: String): String? {
+        val text = normalise(rawInput)
+        val markers = arrayOf(
+            "last photo", "latest photo", "last picture", "latest picture",
+            "recent photo", "last screenshot", "latest screenshot",
+            "photo me kya", "photo mein kya", "tasveer me kya",
+            "last image", "pichli photo", "meri photo"
+        )
+        if (!matches(text, *markers)) return null
+        return rawInput.trim().ifBlank { "Describe this photo." }
     }
 
     private fun dispatch(rawInput: String): String? {
@@ -295,6 +368,17 @@ class QuickCommandRouter(context: Context) {
             return actions.sms(who, body)
         }
 
+        // ---------- Wake word (opt-in, never auto-started) ----------
+        if (matches(text, "wake word", "hotword", "always listening", "always listen", "hands free mode")) {
+            return if (isOffRequest(text)) {
+                com.jarvis.ai.service.WakeWordService.stop(app)
+                "Wake word listening is off, sir."
+            } else {
+                com.jarvis.ai.service.WakeWordService.start(app)
+                "Listening for \"Aurix\", sir. Battery use is higher while this is on."
+            }
+        }
+
         // ---------- Email ----------
         if (matches(text, "send email", "send an email", "email karo", "compose email")) {
             val to = afterAny(text, " to ").orEmpty().substringBefore(" saying ").trim()
@@ -347,6 +431,35 @@ class QuickCommandRouter(context: Context) {
         }
 
         return null
+    }
+
+    /**
+     * "self check" / "diagnostics" / "sab theek hai" -> on-device report.
+     *
+     * Handled before [dispatch] so it can never be shadowed by another
+     * command, and kept offline so it still answers when the very thing
+     * being diagnosed is a dead AI provider.
+     */
+    private fun selfCheckReply(rawInput: String): String? {
+        val text = normalise(rawInput)
+        // Black box read-out. Answered before the self-check so "crash log"
+        // never gets swallowed by the broader "diagnostic" matcher.
+        val wantsCrash = matches(
+            text,
+            "crash log", "crashlog", "crash report", "last crash", "why did you crash",
+            "why app closed", "app band kyu hua", "crash kyu hua", "stack trace"
+        )
+        if (wantsCrash) {
+            return com.jarvis.ai.diagnostics.CrashGuard.report(app)
+        }
+        val asked = matches(
+            text,
+            "self check", "selfcheck", "self-check", "diagnostic", "diagnose",
+            "health check", "system check", "run checkup", "status report",
+            "sab theek hai", "sab thik hai", "kya kya kaam kar raha"
+        )
+        if (!asked) return null
+        return com.jarvis.ai.diagnostics.SelfCheck.run(app).toChatMessage()
     }
 
     // ------------------------------------------------------------------
