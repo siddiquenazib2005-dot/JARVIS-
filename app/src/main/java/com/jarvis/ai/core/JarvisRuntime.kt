@@ -123,10 +123,30 @@ class JarvisRuntime private constructor(context: Context) {
         _appForeground.value = foreground
     }
 
+    /**
+     * Brain step 5: durable on-device memory.
+     *
+     * Encrypted by SecureKvStore because memories are personal data, and
+     * shared as a single instance so every read and write hits the same file.
+     */
+    val durableMemoryStore: com.jarvis.ai.memory.vector.PersistentVectorStore by lazy {
+        com.jarvis.ai.memory.vector.PersistentVectorStore(
+            com.jarvis.ai.memory.SecureKvStore(appContext)
+        )
+    }
+
     val vectorMemory: VectorMemoryManager by lazy {
         VectorMemoryManager(
-            embedder = com.jarvis.ai.memory.vector.MistralEmbeddingProvider(secrets),
-            secrets = secrets
+            // Mistral stays the preferred embedder because its vectors are
+            // genuinely semantic. The wrapper means a missing key or a dead
+            // network downgrades memory to lexical matching instead of
+            // switching it off, which is what used to happen.
+            embedder = com.jarvis.ai.memory.vector.FallbackEmbeddingProvider(
+                primary = com.jarvis.ai.memory.vector.MistralEmbeddingProvider(secrets),
+                fallback = com.jarvis.ai.memory.vector.LocalEmbeddingProvider()
+            ),
+            secrets = secrets,
+            durableStore = durableMemoryStore
         )
     }
 
@@ -163,6 +183,9 @@ class JarvisRuntime private constructor(context: Context) {
         providerManager.bootstrapFromSecrets()
         initializeOrchestrator()
         EventBus.publish(EventType.APP_STARTED)
+        // Startup self-check. Runs last so it inspects a fully assembled
+        // runtime, and only records FAIL-level findings so boot stays quiet.
+        com.jarvis.ai.diagnostics.SelfCheck.runAtStartup(appContext)
     }
 
     companion object {
