@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.jarvis.ai.core.JarvisRuntime
+import com.jarvis.ai.diagnostics.CrashGuard
 import com.jarvis.ai.onboarding.OnboardingPrefs
 import com.jarvis.ai.ui.screens.ChatScreen
 import com.jarvis.ai.ui.screens.OnboardingScreen
@@ -31,6 +32,11 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Black box first: installed before anything else can throw, so the
+        // next "AURIX keeps stopping" leaves a stack trace behind instead of a
+        // mystery. Readable in-app with the "crash log" command.
+        CrashGuard.install(applicationContext)
+
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
