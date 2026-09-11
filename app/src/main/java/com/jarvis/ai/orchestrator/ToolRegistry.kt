@@ -121,6 +121,20 @@ object ToolRegistry {
             confirmationRequired = true,
             confirmationMessage = "Do you want to send this WhatsApp message?"
         ),
+        "send_email" to ToolDefinition(
+            name = "send_email",
+            description = "Send an email directly over SMTP to an email address",
+            category = "messaging",
+            parameters = mapOf(
+                "to" to "Recipient email address",
+                "subject" to "Subject line",
+                "body" to "The message body"
+            ),
+            permission = null,
+            riskLevel = RiskLevel.MEDIUM,
+            confirmationRequired = true,
+            confirmationMessage = "Do you want to send this email?"
+        ),
         "memory_read" to ToolDefinition(
             name = "memory_read",
             description = "Read stored memories",
