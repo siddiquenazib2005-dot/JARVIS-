@@ -197,6 +197,17 @@ class MasterOrchestrator(
                     val withCurrentInput = history + Message(sender = Sender.USER, text = input)
                     val trimmedHistory = trimToBudget(withCurrentInput)
 
+                    // BRAIN (step 3b): before answering conversationally, let the
+                    // model decide whether this turn is actually an ACTION. Only a
+                    // decisive tool call short-circuits the chat path; anything else
+                    // falls through to the normal streamed reply below, so a failed
+                    // or absent tool decision can never cost the user their answer.
+                    val toolUpdates = tryToolDecision(trimmedHistory, systemPrompt, userConfirmedThisTurn)
+                    if (toolUpdates != null) {
+                        toolUpdates.forEach { emit(it) }
+                        return@flow
+                    }
+
                     providerRouter
                         .routeText(
                             LlmRouteRequest(
@@ -508,7 +519,80 @@ class MasterOrchestrator(
         return@withContext updates
     }
 
-    /** Heuristic: first-person durable statements ("remember…", "my X is Y"). */
+    /**
+     * Brain step 3b: hand the registry to the model and let it choose a tool.
+     *
+     * Returns null for "this was not an action" -- the caller then runs the
+     * ordinary streamed chat path. Every failure mode (no executor, no tools,
+     * dead providers, unparseable reply, unknown tool name) collapses to null
+     * on purpose: the brain is allowed to add capability, never to remove the
+     * ability to simply talk.
+     *
+     * The registry is still the authority, not the model. isExposed() rejects
+     * hallucinated tool names, and executeTool() puts every accepted call back
+     * through PermissionGate + AuditLog, so a model cannot talk its way past
+     * a confirmation.
+     */
+    private suspend fun tryToolDecision(
+        history: List<Message>,
+        systemPrompt: String,
+        userConfirmed: Boolean
+    ): List<OrchestratorUpdate>? {
+        val executor = toolExecutor ?: return null
+        if (ToolSchema.exposedCount() == 0) return null
+
+        val reply = try {
+            providerRouter.routeTools(
+                LlmRouteRequest(
+                    capability = Capability.CHAT,
+                    history = history,
+                    // The text catalogue rides along with the native schema so a
+                    // provider without real tool calling can still answer with the
+                    // loose JSON form that ToolCallParser understands.
+                    systemPrompt = systemPrompt + "\n\n" + ToolSchema.promptCatalog(),
+                    stream = false
+                ),
+                ToolSchema.openAiTools()
+            )
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            Log.w(TAG, "tool probe failed: ${e.message}")
+            null
+        } ?: return null
+
+        val invocation = reply.invocation
+            ?: reply.text?.let { com.jarvis.ai.provider.ToolCallParser.fromLooseText(it) }
+            ?: return null
+
+        if (!ToolSchema.isExposed(invocation.name)) {
+            Log.w(TAG, "model asked for unknown tool: ${invocation.name}")
+            return null
+        }
+
+        val startedAt = System.currentTimeMillis()
+        val updates = mutableListOf<OrchestratorUpdate>()
+        EventBus.publish(EventType.INTENT_DETECTED, "brain:${invocation.name}")
+
+        when (val result = executor.executeTool(invocation.name, invocation.args, userConfirmed)) {
+            is ToolResult.ConfirmationRequired ->
+                updates += OrchestratorUpdate.Confirmation(invocation.name, result.message)
+
+            is ToolResult.Failure -> {
+                updates += OrchestratorUpdate.Delta(ResultVerifier.getUserMessage(result))
+                updates += completed(false, "brain-tools", startedAt)
+            }
+
+            is ToolResult.Success -> {
+                EventBus.publish(EventType.DEVICE_ACTION, invocation.name)
+                updates += OrchestratorUpdate.Delta(ResultVerifier.getUserMessage(result))
+                updates += completed(true, "brain-tools", startedAt)
+            }
+        }
+        return updates
+    }
+
+    /** Heuristic: first-person durable statements ("remember", "my X is Y"). */
     private fun looksLikeDurableFact(text: String): Boolean {
         val t = text.trim().lowercase()
         if (t.length !in 8..300) return false
