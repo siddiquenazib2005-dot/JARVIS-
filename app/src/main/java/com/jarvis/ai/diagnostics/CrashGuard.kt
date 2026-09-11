@@ -92,15 +92,37 @@ object CrashGuard {
     }
 
     private fun renderStack(error: Throwable): String {
-        val frames = error.stackTrace ?: return ""
-        val ours = frames.filter { it.className.startsWith("com.jarvis.ai") }
+        val frames: List<StackTraceElement> = error.stackTrace?.toList() ?: emptyList()
+        if (frames.isEmpty()) return ""
         // Our own frames first (that is where the fix has to happen), then the
-        // rest of the trace for context.
-        val ordered = (ours + frames.toList()).distinct().take(FRAMES)
-        return ordered.joinToString("\n") { frame ->
-            val file = frame.fileName ?: "?"
-            frame.className + "." + frame.methodName + " (" + file + ":" + frame.lineNumber + ")"
+        // rest of the trace for context. Written with an explicit loop instead
+        // of joinToString so no generic inference is involved: this file has to
+        // compile even when everything else is on fire.
+        val ours = ArrayList<StackTraceElement>()
+        val rest = ArrayList<StackTraceElement>()
+        for (frame in frames) {
+            if (frame.className.startsWith("com.jarvis.ai")) ours.add(frame) else rest.add(frame)
         }
+        val ordered = ArrayList<StackTraceElement>()
+        ordered.addAll(ours)
+        ordered.addAll(rest)
+        val out = StringBuilder()
+        var shown = 0
+        for (frame in ordered) {
+            if (shown >= FRAMES) break
+            if (shown > 0) out.append("\n")
+            val file: String = frame.fileName ?: "?"
+            out.append(frame.className)
+                .append(".")
+                .append(frame.methodName)
+                .append(" (")
+                .append(file)
+                .append(":")
+                .append(frame.lineNumber)
+                .append(")")
+            shown += 1
+        }
+        return out.toString()
     }
 
     /** The last recorded crash, or null when the app has never crashed. */
