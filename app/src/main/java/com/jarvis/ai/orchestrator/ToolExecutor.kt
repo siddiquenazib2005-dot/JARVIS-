@@ -89,6 +89,13 @@ class ToolExecutor(private val context: Context) {
                     else com.jarvis.ai.core.EventType.PROVIDER_FAILED,
                     "$toolName:${result.javaClass.simpleName}"
                 )
+                // Feed the runtime health agent. Only real failures are
+                // recorded: a ConfirmationRequired is the system working.
+                if (result is ToolResult.Failure) {
+                    com.jarvis.ai.diagnostics.DiagnosticsLog.record(
+                        "tool:$toolName", result.error
+                    )
+                }
                 result
             }
         }
@@ -105,6 +112,7 @@ class ToolExecutor(private val context: Context) {
                 "calculate" -> executeCalculate(parameters)
                 "send_sms" -> executeSendSms(parameters)
                 "send_whatsapp" -> executeSendWhatsapp(parameters)
+                "send_email" -> executeSendEmail(parameters)
                 "call_contact" -> executeCallContact(parameters)
                 else -> ToolResult.Failure(
                     toolName = toolName,
@@ -135,6 +143,11 @@ class ToolExecutor(private val context: Context) {
             "call_contact" -> {
                 (parameters["phoneNumber"] as? String)?.isNotBlank() == true ||
                     (parameters["contact"] as? String)?.isNotBlank() == true
+            }
+            "send_email" -> {
+                val to = (parameters["to"] as? String) ?: (parameters["email"] as? String)
+                val body = (parameters["body"] as? String) ?: (parameters["message"] as? String)
+                to?.contains("@") == true && body?.isNotBlank() == true
             }
             else -> false
         }
@@ -384,7 +397,35 @@ class ToolExecutor(private val context: Context) {
         return ContactsResolver.resolvePhoneNumber(context, contactName)
     }
 
-    /** Executes the send_sms tool via SmsManager — no UI automation involved. */
+    /**
+     * Sends mail over SMTP. Unlike the chat seam, the brain gets NO silent
+     * fallback to a compose window: a model that was told "sent" when only a
+     * draft opened would go on to report success it never achieved.
+     */
+    private fun executeSendEmail(parameters: Map<String, Any?>): ToolResult {
+        val to = ((parameters["to"] as? String) ?: (parameters["email"] as? String))?.trim().orEmpty()
+        val body = ((parameters["body"] as? String) ?: (parameters["message"] as? String))?.trim().orEmpty()
+        val subject = (parameters["subject"] as? String)?.trim().orEmpty()
+        return when (val outcome = com.jarvis.ai.tools.EmailSender(context).send(to, subject, body)) {
+            is com.jarvis.ai.tools.EmailSender.Outcome.Sent -> ToolResult.Success(
+                toolName = "send_email",
+                data = mapOf("to" to outcome.to, "subject" to subject),
+                message = "Email sent to ${outcome.to}, sir."
+            )
+            is com.jarvis.ai.tools.EmailSender.Outcome.NotConfigured -> ToolResult.Failure(
+                toolName = "send_email",
+                error = com.jarvis.ai.tools.EmailSender.SETUP_HINT,
+                recoverable = false
+            )
+            is com.jarvis.ai.tools.EmailSender.Outcome.Failed -> ToolResult.Failure(
+                toolName = "send_email",
+                error = outcome.reason,
+                recoverable = true
+            )
+        }
+    }
+
+    /** Executes the send_sms tool via SmsManager - no UI automation involved. */
     private suspend fun executeSendSms(parameters: Map<String, Any?>): ToolResult {
         val message = (parameters["message"] as? String)?.trim()
         if (message.isNullOrBlank()) {
@@ -704,5 +745,27 @@ class TaskPlanner {
             "MAKE_CALL" -> "call_contact"
             else -> null
         }
+    }
+
+    companion object {
+        /**
+         * Every tool name [runBody] can actually dispatch.
+         *
+         * Kept next to the `when` deliberately: the registry agent compares
+         * this against ToolRegistry, so a tool added to only one of the two
+         * is reported instead of surfacing later as "Unknown tool" in chat.
+         */
+        val SUPPORTED_TOOLS: Set<String> = setOf(
+            "open_app",
+            "open_url",
+            "open_settings",
+            "get_battery_status",
+            "get_device_status",
+            "calculate",
+            "send_sms",
+            "send_whatsapp",
+            "send_email",
+            "call_contact"
+        )
     }
 }
