@@ -23,8 +23,8 @@ android {
         applicationId = "com.aurix.ai"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "1.13"
+        versionCode = 20
+        versionName = "1.19"
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -94,6 +94,12 @@ dependencies {
     // Kotlin Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+
+    // Real SMTP email sending (MYRA parity). The android-* artifacts are the
+    // Android-safe repackaging of JavaMail; the desktop com.sun.mail:javax.mail
+    // artifact does NOT work here because it depends on java.beans.
+    implementation("com.sun.mail:android-mail:1.6.7")
+    implementation("com.sun.mail:android-activation:1.6.7")
 
     // Open-Jarvis integrations
     implementation(libs.androidx.security.crypto)
