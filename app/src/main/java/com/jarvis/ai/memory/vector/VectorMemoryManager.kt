@@ -42,7 +42,13 @@ class VectorMemoryManager(
     private val secrets: SecretsSource,
     private val config: VectorMemoryConfig = VectorMemoryConfig(),
     private val now: () -> Long = System::currentTimeMillis,
-    private val transport: com.jarvis.ai.provider.HttpTransport = com.jarvis.ai.provider.HttpTransports.default
+    private val transport: com.jarvis.ai.provider.HttpTransport = com.jarvis.ai.provider.HttpTransports.default,
+    /**
+     * Brain step 5: durable ON-DEVICE store, tried after the cloud stores but
+     * before the RAM fallback. Null keeps the old behaviour exactly, so tests
+     * and any other caller are unaffected.
+     */
+    private val durableStore: VectorStore? = null
 ) {
 
     private val classifier = MemoryClassifier()
@@ -61,6 +67,10 @@ class VectorMemoryManager(
         val candidates = mutableListOf<Pair<String, VectorStore>>()
         if (pineconeStore.isConfigured()) candidates += "pinecone" to pineconeStore
         if (qdrantStore.isConfigured()) candidates += "qdrant" to qdrantStore
+        // On-device disk store: survives process death, needs no key. It sits
+        // below the cloud stores (their embeddings are semantically better) but
+        // above RAM, which is wiped whenever Android kills the process.
+        durableStore?.let { candidates += it.storeId to it }
         candidates += "inmemory" to localStore
         val ts = now()
         return candidates.filter { (id, _) -> (cooldowns[id] ?: 0L) <= ts }.map { it.second }
@@ -86,7 +96,11 @@ class VectorMemoryManager(
                 throw e
             } catch (e: Exception) {
                 lastError = e
-                if (store.storeId != "inmemory") {
+                // Local stores are never put on cooldown: a cooldown exists to
+                // stop hammering a sick REMOTE service. Benching the on-device
+                // store would leave the user with no memory at all for a
+                // minute, which is the opposite of the intent.
+                if (store.storeId != "inmemory" && store.storeId != "on-device") {
                     cooldowns[store.storeId] = now() + config.storeCooldownMs
                 }
             }
@@ -168,7 +182,7 @@ class VectorMemoryManager(
         query: String,
         projectId: String? = null,
         filter: MemoryFilter = MemoryFilter(),
-        fallbackStore: VectorStore = localStore
+        fallbackStore: VectorStore = durableStore ?: localStore
     ): List<ScoredMemory> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
         val queryVector = embedder.embed(listOf(query)).firstOrNull()
@@ -194,7 +208,7 @@ class VectorMemoryManager(
     suspend fun contextBlock(
         query: String,
         projectId: String? = null,
-        fallbackStore: VectorStore = localStore
+        fallbackStore: VectorStore = durableStore ?: localStore
     ): String {
         val hits = recall(query, projectId, MemoryFilter(), fallbackStore)
         if (hits.isEmpty()) return ""
