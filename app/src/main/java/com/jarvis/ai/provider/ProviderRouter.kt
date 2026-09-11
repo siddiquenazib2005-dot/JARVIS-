@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
 import java.io.IOException
 
 /** Streamed route output: incremental deltas followed by exactly one terminal report. */
@@ -178,6 +179,88 @@ class ProviderRouter(
             )
         }
     }.flowOn(Dispatchers.IO)
+
+    // -------------------------------------------------------------------
+    // TOOL ROUTING (brain step 3a)
+    // -------------------------------------------------------------------
+
+    /**
+     * Asks a model whether the user's turn is an ACTION, and if so which one.
+     *
+     * This is the routing twin of [routeText], with the same health checks,
+     * key rotation and provider fallback, but three deliberate differences:
+     *
+     *  1. It is suspend, not a Flow. A tool decision is one small object;
+     *     there is nothing to stream.
+     *  2. It returns null instead of a user-facing failure string. Null means
+     *     "no usable decision" and the caller must fall back to ordinary chat.
+     *     A tool probe must never be able to put an error on screen, otherwise
+     *     every offline moment would look like a crash.
+     *  3. Providers whose adapter has no native tool calling return null from
+     *     chatWithTools; that is a soft miss, so the key is not penalised.
+     */
+    suspend fun routeTools(
+        request: LlmRouteRequest,
+        tools: JsonArray
+    ): ToolAwareReply? = withContext(Dispatchers.IO) {
+        if (tools.isEmpty()) return@withContext null
+
+        val primaryCfg = providerManager.selectPrimary(request.capability)
+        val candidates = if (primaryCfg != null) {
+            listOf(primaryCfg) + ProviderRegistry
+                .enabledFor(request.capability)
+                .filter { it.providerType == ProviderType.LLM && it.providerId != primaryCfg.providerId }
+        } else {
+            ProviderRegistry
+                .enabledFor(request.capability)
+                .filter { it.providerType == ProviderType.LLM }
+        }
+
+        for (cfg in candidates) {
+            if (!health.isSelectable(cfg.providerId, cfg.enabled, keys.hasHealthySlot(cfg.providerId, now()))) {
+                continue
+            }
+            if (secrets.get(envRef(cfg.envVarName)) == null) continue
+            val model = ModelRouting.resolveModel(cfg.providerId, request.capability, cfg.defaultModel)
+
+            while (true) {
+                val picked = keys.pick(cfg.providerId, now()) ?: break
+                val (slot, secret) = picked
+                val attemptStart = now()
+                try {
+                    val provider = llmFactory(cfg, secret, model)
+                    // Gemini expects tools = [{ functionDeclarations: [...] }] while the
+                    // OpenAI family expects [{ type: "function", function: {...} }].
+                    // The caller passes the OpenAI shape; translate here so no caller
+                    // has to know which backend won the routing race.
+                    val payload = if (cfg.providerId == "gemini") {
+                        com.jarvis.ai.orchestrator.ToolSchema.geminiFunctionDeclarations()
+                    } else {
+                        tools
+                    }
+                    val reply = provider.chatWithTools(
+                        request.history,
+                        request.systemPrompt,
+                        model,
+                        payload
+                    )
+                    if (reply == null) break
+                    if (reply.isEmpty) throw IOException("empty tool reply")
+                    health.recordSuccess(cfg.providerId, now() - attemptStart)
+                    keys.markSuccess(slot)
+                    return@withContext reply
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (e: Exception) {
+                    val category = FailureClassifier.classify(e.message)
+                    keys.markFailure(slot, category, now())
+                    health.recordFailure(cfg.providerId, category)
+                    if (!keys.hasHealthySlot(cfg.providerId, now())) break
+                }
+            }
+        }
+        null
+    }
 
     // -------------------------------------------------------------------
     // VISION ROUTING
