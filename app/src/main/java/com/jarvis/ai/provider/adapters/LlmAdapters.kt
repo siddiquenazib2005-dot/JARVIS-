@@ -13,7 +13,16 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
+import com.jarvis.ai.provider.ToolAwareReply
+import com.jarvis.ai.provider.ToolCallParser
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -165,6 +174,62 @@ class GeminiProvider(
                 ?.mapNotNull { it.text }?.joinToString("")
                 ?.takeIf { it.isNotBlank() }
                 ?: throw IOException("gemini-vision: empty analysis")
+        }
+    }
+
+    /**
+     * Tool-aware turn for Gemini (brain step 2b).
+     *
+     * Gemini differs from the OpenAI family in three ways that matter here:
+     * the catalogue is nested under functionDeclarations (ToolSchema already
+     * emits that shape), the system prompt lives in systemInstruction rather
+     * than a message, and the answer carries functionCall parts instead of
+     * tool_calls. Parsing is delegated to the shared ToolCallParser so both
+     * families converge on one ToolAwareReply type.
+     */
+    override suspend fun chatWithTools(
+        history: List<Message>,
+        systemPrompt: String,
+        model: String,
+        tools: JsonArray
+    ): ToolAwareReply? = withContext(Dispatchers.IO) {
+        if (tools.isEmpty()) return@withContext null
+        val payload = buildJsonObject {
+            putJsonArray("contents") {
+                history.forEach { message ->
+                    if (message.text.isNotBlank()) {
+                        addJsonObject {
+                            put(
+                                "role",
+                                if (message.sender == Sender.USER) "user" else "model"
+                            )
+                            putJsonArray("parts") {
+                                addJsonObject { put("text", message.text) }
+                            }
+                        }
+                    }
+                }
+            }
+            putJsonObject("systemInstruction") {
+                putJsonArray("parts") {
+                    addJsonObject { put("text", systemPrompt) }
+                }
+            }
+            put("tools", tools)
+        }.toString()
+
+        val url = "${BASE_URL.trimEnd('/')}/models/${model}:generateContent?key=$apiKey"
+        val request = Request.Builder()
+            .url(url)
+            .header("Content-Type", "application/json")
+            .post(payload.toRequestBody(jsonContentType))
+            .build()
+
+        transport.execute(request).use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code}: ${response.body?.string()?.take(300)}")
+            }
+            ToolCallParser.fromGemini(response.body?.string().orEmpty())
         }
     }
 
