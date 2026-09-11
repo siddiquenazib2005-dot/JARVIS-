@@ -25,7 +25,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.toList
-import kotlin.collections.joinToString
 
 class AgentCore(
     private val context: Context,
@@ -226,7 +225,13 @@ class AgentCore(
     private suspend fun getMemoryContext(command: String): String {
         val vecMem = orchestrator?.vectorMemory ?: return ""
         return runCatching {
-            vecMem.recall(command).joinToString("\n") { "- ${it.record.content.take(200)}" }
+            val hits = vecMem.recall(command)
+            val out = StringBuilder()
+            for (hit in hits) {
+                if (out.isNotEmpty()) out.append("\n")
+                out.append("- ").append(hit.record.content.take(200))
+            }
+            out.toString()
         }.getOrDefault("")
     }
 
