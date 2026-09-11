@@ -38,6 +38,7 @@ import com.jarvis.ai.service.TtsEngine
 import com.jarvis.ai.service.WakeWordDetector
 import com.jarvis.ai.system.SystemAwareness
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -124,10 +125,37 @@ class JarvisViewModel(
     private val quickCommands = QuickCommandRouter(appContext)
     private val imageGen = com.jarvis.ai.tools.ImageGenerator(appContext)
 
+    /** Real SMTP sending; falls back to the compose intent when unconfigured. */
+    private val emailSender = com.jarvis.ai.tools.EmailSender(appContext)
+
+    /** Gallery ingest for the (already complete) vision backend. */
+    private val photoVision = com.jarvis.ai.tools.PhotoVision(appContext)
+
     private val _selectedModel = MutableStateFlow<ModelOption?>(null)
 
     /** Currently pinned model, or null while routing is automatic. */
     val selectedModel: StateFlow<ModelOption?> = _selectedModel.asStateFlow()
+
+    /*
+     * Crash shield for every coroutine started by this ViewModel.
+     *
+     * Root cause of "volume set ho gaya but app band ho gayi": a local
+     * command applies its device action, then handleLocally() launches an
+     * IO coroutine to persist the turn. launch{} is a ROOT coroutine, so an
+     * exception in that block (SQLite write, session rename, refresh) is
+     * uncaught and kills the whole process - after the action already
+     * succeeded. That is exactly the symptom: action works, app dies.
+     *
+     * With this handler attached the failure is demoted to a diagnostics
+     * entry the self-check can report instead of a process death.
+     */
+    private val crashSafe = CoroutineExceptionHandler { _, error ->
+        if (error !is CancellationException) {
+            val reason = error.message?.takeIf { it.isNotBlank() }
+                ?: error::class.java.simpleName
+            com.jarvis.ai.diagnostics.DiagnosticsLog.record("viewmodel", reason)
+        }
+    }
 
     private val ttsQueue: MutableStateFlow<String?> = MutableStateFlow(null)
 
@@ -153,7 +181,7 @@ class JarvisViewModel(
         }
         _selectedModel.value = ModelCatalog.find(RoutingPrefs.pinnedProviderId, RoutingPrefs.pinnedModel)
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + crashSafe) {
             var sessions = db.sessions()
             if (sessions.isEmpty()) {
                 val created = SessionInfo(title = DEFAULT_SESSION_TITLE)
@@ -172,7 +200,7 @@ class JarvisViewModel(
             }
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(crashSafe) {
             tts.isSpeaking.collect { speaking ->
                 _uiState.update { it.copy(isSpeaking = speaking) }
             }
@@ -180,7 +208,7 @@ class JarvisViewModel(
 
         // Lifecycle-aware hands-free: release the mic when the app goes to the
         // background (privacy + battery), re-arm it when the user returns.
-        viewModelScope.launch {
+        viewModelScope.launch(crashSafe) {
             runtime.appForeground.collect { foreground ->
                 if (!foreground && listening) endListening()
                 if (foreground && _handsFreeActive.value && !listening && !_uiState.value.isLoading) {
@@ -193,7 +221,7 @@ class JarvisViewModel(
 
         // Greeting is spoken ONCE per session/period (PresenceGate dedups);
         // recompositions never reach here.
-        viewModelScope.launch {
+        viewModelScope.launch(crashSafe) {
             if (presenceGate.shouldGreet()) {
                 EventBus.publish(EventType.SESSION_STARTED)
                 val text = _uiState.value.messages.firstOrNull()?.text
@@ -203,7 +231,7 @@ class JarvisViewModel(
 
         // Proactive intelligence: one evaluation per minute while foregrounded;
         // ProactiveEngine itself enforces anti-spam intervals.
-        viewModelScope.launch {
+        viewModelScope.launch(crashSafe) {
             while (isActive) {
                 delay(PROACTIVE_POLL_MS)
                 runCatching {
@@ -218,7 +246,7 @@ class JarvisViewModel(
         // Sentence-level TTS queue manager.
         // Sentences become available via the sentence parser as the LLM streams.
         // They are played one-at-a-time; the next auto-plays when the current finishes.
-        viewModelScope.launch {
+        viewModelScope.launch(crashSafe) {
             var pending = sentenceParser.flush() // flush any leftover from previous session
             if (pending.isNotBlank()) {
                 ttsQueue.value = pending
@@ -256,7 +284,7 @@ class JarvisViewModel(
             onResult("Backend cleared — using on-device routing, sir.")
             return
         }
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + crashSafe) {
             val summary = runCatching {
                 AurixBackendClient(BackendPrefs.baseUrl, BackendPrefs.appToken).describeConnection()
             }.getOrElse { "Backend unreachable — ${it.message.orEmpty()}" }
@@ -280,7 +308,7 @@ class JarvisViewModel(
             )
         }
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + crashSafe) {
             db.appendMessage(sessionId, userMessage)
             val firstTurn = _uiState.value.messages.count {
                 it.sender == Sender.USER && !it.text.startsWith(GREETING_MARK)
@@ -294,7 +322,7 @@ class JarvisViewModel(
         }
 
         val pinned = _selectedModel.value
-        generationJob = viewModelScope.launch {
+        generationJob = viewModelScope.launch(crashSafe) {
             val replyId = newReplyId()
             val buffer = StringBuilder()
             var started = false
@@ -374,7 +402,7 @@ class JarvisViewModel(
             )
         }
         ttsQueue.value = reply
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + crashSafe) {
             db.appendMessage(sessionId, userMessage)
             db.appendMessage(sessionId, replyMessage)
             val firstTurn = _uiState.value.messages.count {
@@ -404,7 +432,7 @@ class JarvisViewModel(
                 latency = LatencyInfo()
             )
         }
-        viewModelScope.launch {
+        viewModelScope.launch(crashSafe) {
             val reply = withContext(Dispatchers.IO) {
                 runCatching { imageGen.generate(prompt) }
                     .getOrElse { "Image generation failed, sir: " + (it.message ?: "unknown error") }
@@ -431,6 +459,99 @@ class JarvisViewModel(
     }
 
     /**
+     * MYRA parity: sends mail directly over SMTP instead of only opening a
+     * compose window.
+     *
+     * When credentials are absent we do NOT show an error -- we fall back to
+     * the existing compose-intent path so the user still gets their mail out.
+     * A hard failure (bad password, unreachable server) is reported verbatim,
+     * because silently opening a draft after claiming to send would be a lie.
+     */
+    private fun sendEmail(sessionId: String, input: String, request: com.jarvis.ai.tools.EmailRequest) {
+        clearNotice()
+        val userMessage = Message(sender = Sender.USER, text = input)
+        _uiState.update {
+            it.copy(messages = it.messages + userMessage, isLoading = true, latency = LatencyInfo())
+        }
+        viewModelScope.launch(crashSafe) {
+            val reply = withContext(Dispatchers.IO) {
+                when (val outcome = emailSender.send(request.to, request.subject, request.body)) {
+                    is com.jarvis.ai.tools.EmailSender.Outcome.Sent ->
+                        "Email sent to ${outcome.to}, sir."
+                    is com.jarvis.ai.tools.EmailSender.Outcome.NotConfigured -> {
+                        val drafted = runCatching { quickCommands.handle(input) }.getOrNull()
+                        val cleaned = drafted
+                            ?.let { if (QuickCommandRouter.isSoftFail(it)) QuickCommandRouter.cleanFailure(it) else it }
+                        (cleaned ?: "I could not open an email app, sir.") + " " +
+                            com.jarvis.ai.tools.EmailSender.SETUP_HINT
+                    }
+                    is com.jarvis.ai.tools.EmailSender.Outcome.Failed ->
+                        "I could not send that email, sir - ${outcome.reason}."
+                }
+            }
+            finishSideChannelTurn(sessionId, input, userMessage, reply)
+        }
+    }
+
+    /**
+     * MYRA parity: photo understanding. The vision BACKEND already existed
+     * (provider routing, fallback, Gemini + OpenAI) but nothing ever handed it
+     * an image; [com.jarvis.ai.tools.PhotoVision] is that missing ingest half.
+     */
+    private fun describeLastPhoto(sessionId: String, input: String, question: String) {
+        clearNotice()
+        val userMessage = Message(sender = Sender.USER, text = input)
+        _uiState.update {
+            it.copy(messages = it.messages + userMessage, isLoading = true, latency = LatencyInfo())
+        }
+        viewModelScope.launch(crashSafe) {
+            val reply = withContext(Dispatchers.IO) {
+                when (val photo = photoVision.latestPhoto()) {
+                    is com.jarvis.ai.tools.PhotoVision.Outcome.Unavailable -> photo.reason
+                    is com.jarvis.ai.tools.PhotoVision.Outcome.Ready ->
+                        runCatching {
+                            runtime.masterOrchestrator
+                                .analyzeImage(photo.base64, photo.mimeType, question)
+                                .text
+                        }.getOrElse {
+                            "I could not analyse that photo, sir: " + (it.message ?: "vision unavailable")
+                        }
+                }
+            }
+            finishSideChannelTurn(sessionId, input, userMessage, reply)
+        }
+    }
+
+    /**
+     * Shared tail for the async side channels (image, email, vision): render
+     * the reply, speak it, persist both turns and keep session titles correct.
+     * Extracted so a fix to persistence never has to be made in three places.
+     */
+    private suspend fun finishSideChannelTurn(
+        sessionId: String,
+        input: String,
+        userMessage: Message,
+        reply: String
+    ) {
+        val replyMessage = Message(sender = Sender.AURIX, text = reply)
+        _uiState.update { it.copy(messages = it.messages + replyMessage, isLoading = false) }
+        ttsQueue.value = reply
+        withContext(Dispatchers.IO) {
+            db.appendMessage(sessionId, userMessage)
+            db.appendMessage(sessionId, replyMessage)
+            val firstTurn = _uiState.value.messages.count {
+                it.sender == Sender.USER && !it.text.startsWith(GREETING_MARK)
+            } <= 1
+            if (firstTurn) {
+                db.renameSession(sessionId, input.take(TITLE_MAX_LENGTH))
+            } else {
+                db.touchSession(sessionId)
+            }
+            refreshSessionsBlocking()
+        }
+    }
+
+    /**
      * Appends a standalone AURIX line with no matching user turn, then
      * persists it. Used by late-arriving screen-automation reports (item 4).
      */
@@ -439,7 +560,7 @@ class JarvisViewModel(
         val message = Message(sender = Sender.AURIX, text = text)
         _uiState.update { it.copy(messages = it.messages + message) }
         if (sessionId.isBlank()) return
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + crashSafe) {
             db.appendMessage(sessionId, message)
             db.touchSession(sessionId)
         }
@@ -507,10 +628,31 @@ class JarvisViewModel(
                 generateImage(sessionId, trimmed, prompt)
                 return
             }
+            // MYRA parity: SMTP send and photo understanding are both blocking
+            // network work, so they take the same async seam as image gen
+            // rather than stalling the main thread inside the regex router.
+            quickCommands.emailRequest(trimmed)?.let { request ->
+                sendEmail(sessionId, trimmed, request)
+                return
+            }
+            quickCommands.lastPhotoQuestion(trimmed)?.let { question ->
+                describeLastPhoto(sessionId, trimmed, question)
+                return
+            }
             val local = quickCommands.handle(trimmed)
             if (!local.isNullOrBlank()) {
-                handleLocally(sessionId, trimmed, local)
-                return
+                // Brain step 4 (hybrid routing): a CLEAN local reply means the
+                // command was genuinely satisfied offline -- stop here, no LLM
+                // cost, no latency. A TAGGED reply means the regex layer
+                // recognised the command but could not carry it out, and that
+                // used to be a dead end. Now the device error is demoted to a
+                // notice and the turn continues into the brain, which may know
+                // another way to do the same thing.
+                if (!QuickCommandRouter.isSoftFail(local)) {
+                    handleLocally(sessionId, trimmed, local)
+                    return
+                }
+                setNotice(QuickCommandRouter.cleanFailure(local))
             }
         }
 
@@ -525,7 +667,7 @@ class JarvisViewModel(
         val history = _uiState.value.messages.filterNot { it.text.startsWith(GREETING_MARK) } + userMessage
         _uiState.update { it.copy(messages = history, isLoading = true, latency = LatencyInfo()) }
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + crashSafe) {
             db.appendMessage(sessionId, userMessage)
             if (_uiState.value.messages.none {
                     it.sender == Sender.USER && it.id != userMessage.id && !it.text.startsWith(GREETING_MARK)
@@ -537,7 +679,7 @@ class JarvisViewModel(
             }
         }
 
-        generationJob = viewModelScope.launch {
+        generationJob = viewModelScope.launch(crashSafe) {
             val replyId = newReplyId()
             var started = false
             val fullText = StringBuilder()
@@ -688,7 +830,7 @@ class JarvisViewModel(
         val userMessage = Message(sender = Sender.USER, text = "[Image] $caption")
         _uiState.update { it.copy(messages = it.messages + userMessage, isLoading = true) }
 
-        generationJob = viewModelScope.launch {
+        generationJob = viewModelScope.launch(crashSafe) {
             try {
                 val startedAt = System.currentTimeMillis()
                 val result = orchestrator.analyzeImage(base64Image, mimeType, caption)
@@ -759,7 +901,7 @@ class JarvisViewModel(
         typed: Map<String, String>,
         onResult: (String) -> Unit
     ) {
-        viewModelScope.launch {
+        viewModelScope.launch(crashSafe) {
             // Persist non-blank typed keys first.
             typed.forEach { (envName, value) ->
                 if (value.isNotBlank() && value != "••••••••") {
@@ -807,7 +949,7 @@ class JarvisViewModel(
 
     fun newSession() {
         stopGeneration()
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + crashSafe) {
             val created = SessionInfo(title = DEFAULT_SESSION_TITLE)
             db.createSession(created)
             val sessions = db.sessions()
@@ -827,7 +969,7 @@ class JarvisViewModel(
     fun selectSession(id: String) {
         if (id == _uiState.value.activeSessionId) return
         stopGeneration()
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + crashSafe) {
             val messages = db.messages(id)
             _uiState.update {
                 it.copy(
@@ -842,7 +984,7 @@ class JarvisViewModel(
 
     fun deleteSession(id: String) {
         if (id == _uiState.value.activeSessionId) stopGeneration()
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + crashSafe) {
             db.deleteSession(id)
             val sessions = db.sessions()
             if (id == _uiState.value.activeSessionId) {
@@ -1046,7 +1188,7 @@ class JarvisViewModel(
             beginRecognition()
             return
         }
-        viewModelScope.launch {
+        viewModelScope.launch(crashSafe) {
             delay(HANDS_FREE_REARM_DELAY_MS)
             if (!_handsFreeActive.value) return@launch
             if (listening || _uiState.value.isLoading) return@launch
