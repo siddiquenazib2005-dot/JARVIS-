@@ -27,7 +27,28 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build-output.log
+
+      # The Gradle stack trace is useless noise; the only lines that matter are
+      # the Kotlin compiler's "e:" lines. This step surfaces them on their own
+      # so a failed build is readable at a glance instead of scrolled for.
+      - name: Kotlin compiler errors only
+        if: failure()
+        run: |
+          echo "=============== KOTLIN ERRORS ==============="
+          grep -E "^e: |^e:" build-output.log | sed 's|file:///home/runner/work/[^/]*/[^/]*/||' || echo "(no e: lines - failure was not a Kotlin compile error)"
+          echo "=============== WARNINGS (last 20) ==============="
+          grep -E "^w: " build-output.log | sed 's|file:///home/runner/work/[^/]*/[^/]*/||' | tail -20 || true
+
+      - name: Upload full build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AURIX-build-log
+          path: build-output.log
+          if-no-files-found: ignore
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
