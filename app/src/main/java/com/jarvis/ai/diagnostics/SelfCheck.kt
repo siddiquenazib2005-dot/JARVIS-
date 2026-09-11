@@ -4,6 +4,7 @@ import android.content.Context
 import com.jarvis.ai.accessibility.JarvisAccessibilityService
 import com.jarvis.ai.core.JarvisRuntime
 import com.jarvis.ai.onboarding.PermissionCatalog
+import com.jarvis.ai.orchestrator.TaskPlanner
 import com.jarvis.ai.orchestrator.ToolExecutor
 import com.jarvis.ai.orchestrator.ToolRegistry
 import com.jarvis.ai.provider.Capability
@@ -97,7 +98,7 @@ object RegistryAgent : DiagnosticAgent {
 
     override fun inspect(context: Context): List<Finding> {
         val advertised = ToolRegistry.getAllToolNames().toSet()
-        val dispatchable = ToolExecutor.SUPPORTED_TOOLS
+        val dispatchable: Set<String> = TaskPlanner.SUPPORTED_TOOLS
         val findings = mutableListOf<Finding>()
 
         val undispatchable = (advertised - dispatchable).filterNot { it.startsWith("memory") }
