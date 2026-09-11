@@ -400,12 +400,19 @@ class DeviceActionPack(context: Context) {
 
     fun setVolumePercent(percent: Int): String {
         val am = audio() ?: return fail("reach the audio service")
-        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val target = (max * percent.coerceIn(0, 100) / 100).coerceIn(0, max)
+        val safe = percent.coerceIn(0, 100)
+        // getStreamMaxVolume used to sit outside the guard, so an OEM audio
+        // service throwing here escaped as a hard crash instead of a reply.
         return runCatching {
+            val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val target = (max * safe / 100).coerceIn(0, max)
             am.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
-            ok("Media volume set to ${percent.coerceIn(0, 100)}%, sir.")
-        }.getOrElse { fail("change the volume") }
+            ok("Media volume set to " + safe + " percent, sir.")
+        }.getOrElse { error ->
+            lastFailure = error.message?.takeIf { it.isNotBlank() }?.take(120)
+                ?: error::class.java.simpleName
+            fail("change the volume")
+        }
     }
 
     fun volumeUp(): String = stepVolume(AudioManager.ADJUST_RAISE, "up")
