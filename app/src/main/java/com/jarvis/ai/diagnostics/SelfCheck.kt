@@ -104,14 +104,14 @@ object RegistryAgent : DiagnosticAgent {
         if (undispatchable.isNotEmpty()) {
             findings += Finding(
                 name, Severity.FAIL, "Tools advertised but not dispatchable",
-                undispatchable.joinToString(), "Report this - it is an internal wiring bug."
+                undispatchable.joinToString(separator = ", "), "Report this - it is an internal wiring bug."
             )
         }
         val orphaned = dispatchable - advertised
         if (orphaned.isNotEmpty()) {
             findings += Finding(
                 name, Severity.WARN, "Tools the brain is never told about",
-                orphaned.joinToString(), "They work by voice but the model will not choose them."
+                orphaned.joinToString(separator = ", "), "They work by voice but the model will not choose them."
             )
         }
         if (findings.isEmpty()) {
@@ -248,6 +248,21 @@ object HealthAgent : DiagnosticAgent {
 
     private const val WINDOW_MS = 10 * 60 * 1000L
 
+    /*
+     * Recent faults as one line. Written as an explicit loop: the same text
+     * used to be built with a joinToString lambda, and a generic-inference
+     * failure there took the whole build down. Diagnostics code must be the
+     * most boring code in the app.
+     */
+    private fun describeRecent(limit: Int): String {
+        val out = StringBuilder()
+        for (entry in DiagnosticsLog.recent(limit)) {
+            if (out.isNotEmpty()) out.append(" | ")
+            out.append(entry.source).append(": ").append(entry.message)
+        }
+        return if (out.isEmpty()) "no details captured" else out.toString()
+    }
+
     override fun inspect(context: Context): List<Finding> {
         val runtime = JarvisRuntime.get(context)
         val findings = mutableListOf<Finding>()
@@ -257,11 +272,11 @@ object HealthAgent : DiagnosticAgent {
             recentFailures == 0 -> Finding(name, Severity.OK, "No recent faults", "Clean for 10 minutes.")
             recentFailures < 3 -> Finding(
                 name, Severity.WARN, "$recentFailures fault(s) in 10 minutes",
-                DiagnosticsLog.recent(2).joinToString(" | ") { "${it.source}: ${it.message}" }
+                describeRecent(2)
             )
             else -> Finding(
                 name, Severity.FAIL, "$recentFailures faults in 10 minutes",
-                DiagnosticsLog.recent(3).joinToString(" | ") { "${it.source}: ${it.message}" },
+                describeRecent(3),
                 "Something is repeatedly breaking - share this list."
             )
         }
