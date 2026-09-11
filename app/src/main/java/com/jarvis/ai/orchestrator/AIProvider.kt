@@ -22,9 +22,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import kotlin.text.isNotBlank
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -74,6 +78,26 @@ interface AIProvider {
         prompt: String,
         model: String
     ): String
+
+    /**
+     * Tool-aware single turn (brain step 2b).
+     *
+     * [tools] is the provider-shaped catalogue built by
+     * com.jarvis.ai.orchestrator.ToolSchema. The model may answer with prose,
+     * with an action, or both.
+     *
+     * The default returns null, meaning "this provider has no native tool
+     * calling". Callers must treat null as a signal to fall back to
+     * [chatOnce] plus ToolCallParser.fromLooseText, never as a failure.
+     * Defaulting here is deliberate: OfflineProvider and any future adapter
+     * keep compiling untouched.
+     */
+    suspend fun chatWithTools(
+        history: List<Message>,
+        systemPrompt: String,
+        model: String,
+        tools: JsonArray
+    ): com.jarvis.ai.provider.ToolAwareReply? = null
 }
 
 /** OpenAI-compatible provider implementation. */
@@ -195,6 +219,66 @@ open class OpenAICompatibleProvider(
             val content = decoded?.choices?.firstOrNull()?.message?.content
             content?.takeIf { it.isNotBlank() }
                 ?: throw IOException(decoded?.error?.message?.takeIf { it.isNotBlank() } ?: "Vision API returned no data.")
+        }
+    }
+
+    /**
+     * Tool-aware turn for every OpenAI-compatible endpoint (OpenAI, Groq,
+     * OpenRouter, DeepSeek, Cerebras, Mistral).
+     *
+     * Non-streaming on purpose: a tool decision is one small JSON object,
+     * and streaming it would mean reassembling partial tool_calls deltas for
+     * no user-visible gain. Prose replies still stream through [streamChat];
+     * this path only runs when the orchestrator is asking "is this an
+     * action?".
+     *
+     * The payload is hand-built rather than reusing ChatCompletionRequest so
+     * that the shared DTO keeps its current shape and nothing else changes.
+     */
+    override suspend fun chatWithTools(
+        history: List<Message>,
+        systemPrompt: String,
+        model: String,
+        tools: JsonArray
+    ): com.jarvis.ai.provider.ToolAwareReply? = withContext(Dispatchers.IO) {
+        if (tools.isEmpty()) return@withContext null
+        val payload = buildJsonObject {
+            put("model", model)
+            putJsonArray("messages") {
+                addJsonObject {
+                    put("role", "system")
+                    put("content", systemPrompt)
+                }
+                history.forEach { message ->
+                    if (message.text.isNotBlank()) {
+                        addJsonObject {
+                            put(
+                                "role",
+                                if (message.sender == Sender.USER) "user" else "assistant"
+                            )
+                            put("content", message.text)
+                        }
+                    }
+                }
+            }
+            put("tools", tools)
+            put("tool_choice", "auto")
+            put("stream", false)
+        }.toString()
+
+        val request = Request.Builder()
+            .url(baseUrl.trimEnd('/') + "/chat/completions")
+            .header("Authorization", "Bearer $apiKey")
+            .header("Content-Type", "application/json")
+            .post(payload.toRequestBody(jsonContentType))
+            .build()
+
+        transport.execute(request).use { response ->
+            if (!response.isSuccessful) {
+                throw IOException(providerError(response))
+            }
+            val body = response.body?.string().orEmpty()
+            com.jarvis.ai.provider.ToolCallParser.fromOpenAi(body)
         }
     }
 
