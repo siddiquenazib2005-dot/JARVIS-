@@ -604,6 +604,28 @@ class ToolExecutor(private val context: Context) {
             }
         }
     }
+
+    companion object {
+        /**
+         * Every tool name [runBody] can actually dispatch.
+         *
+         * Kept next to the `when` deliberately: the registry agent compares
+         * this against ToolRegistry, so a tool added to only one of the two
+         * is reported instead of surfacing later as "Unknown tool" in chat.
+         */
+        val SUPPORTED_TOOLS: Set<String> = setOf(
+            "open_app",
+            "open_url",
+            "open_settings",
+            "get_battery_status",
+            "get_device_status",
+            "calculate",
+            "send_sms",
+            "send_whatsapp",
+            "send_email",
+            "call_contact"
+        )
+    }
 }
 
 /** Result verifier for tool execution outcomes. */
@@ -748,24 +770,7 @@ class TaskPlanner {
     }
 
     companion object {
-        /**
-         * Every tool name [runBody] can actually dispatch.
-         *
-         * Kept next to the `when` deliberately: the registry agent compares
-         * this against ToolRegistry, so a tool added to only one of the two
-         * is reported instead of surfacing later as "Unknown tool" in chat.
-         */
-        val SUPPORTED_TOOLS: Set<String> = setOf(
-            "open_app",
-            "open_url",
-            "open_settings",
-            "get_battery_status",
-            "get_device_status",
-            "calculate",
-            "send_sms",
-            "send_whatsapp",
-            "send_email",
-            "call_contact"
-        )
+        /** Alias of the real set, which lives in [ToolExecutor]. */
+        val SUPPORTED_TOOLS: Set<String> get() = ToolExecutor.SUPPORTED_TOOLS
     }
 }
