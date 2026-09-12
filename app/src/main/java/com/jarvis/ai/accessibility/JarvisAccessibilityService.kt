@@ -98,33 +98,54 @@ class JarvisAccessibilityService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
-        super.onServiceConnected()
-        instance = this
-        gestureEngine = GestureEngine(this)
-        screenReader = ScreenReader(this)
-        stateFlow.value = A11yServiceState.AVAILABLE
-        AccessibilityLogger.command("accessibility service connected")
+        runCatching {
+            super.onServiceConnected()
+            instance = this
+            stateFlow.value = A11yServiceState.CONNECTING
+            gestureEngine = GestureEngine(this)
+            screenReader = ScreenReader(this)
+            stateFlow.value = A11yServiceState.AVAILABLE
+            AccessibilityLogger.command("accessibility service connected")
+            com.jarvis.ai.diagnostics.DiagnosticsLog.record("accessibility", "connected")
+        }.onFailure { error ->
+            stateFlow.value = A11yServiceState.SUSPENDED
+            AccessibilityLogger.error("SERVICE_CONNECT_FAILED", AccessibilityLogger.redact(error.message))
+            com.jarvis.ai.diagnostics.CrashGuard.record(this, error)
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Driven on-demand by the agent; no event-driven behavior required.
+        runCatching {
+            if (event == null) return
+            if (stateFlow.value != A11yServiceState.AVAILABLE) {
+                stateFlow.value = A11yServiceState.AVAILABLE
+            }
+        }.onFailure { error ->
+            AccessibilityLogger.error("EVENT_FAILED", AccessibilityLogger.redact(error.message))
+            com.jarvis.ai.diagnostics.CrashGuard.record(this, error)
+        }
     }
 
     override fun onInterrupt() {
-        stateFlow.value = A11yServiceState.SUSPENDED
-        AccessibilityLogger.error("SERVICE_INTERRUPTED", "service interrupted")
+        runCatching {
+            stateFlow.value = A11yServiceState.SUSPENDED
+            AccessibilityLogger.error("SERVICE_INTERRUPTED", "service interrupted")
+            com.jarvis.ai.diagnostics.DiagnosticsLog.record("accessibility", "interrupted")
+        }
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
         stateFlow.value = A11yServiceState.DISCONNECTED
         instance = null
-        return super.onUnbind(intent)
+        com.jarvis.ai.diagnostics.DiagnosticsLog.record("accessibility", "unbound")
+        return runCatching { super.onUnbind(intent) }.getOrDefault(false)
     }
 
     override fun onDestroy() {
         stateFlow.value = A11yServiceState.DISCONNECTED
         instance = null
-        super.onDestroy()
+        com.jarvis.ai.diagnostics.DiagnosticsLog.record("accessibility", "destroyed")
+        runCatching { super.onDestroy() }
     }
 
     /** Safe intent to open Android Accessibility Settings (phase 2). */
