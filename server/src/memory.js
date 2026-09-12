@@ -13,7 +13,9 @@ import path from 'node:path'
 const DATA_DIR = process.env.AURIX_DATA_DIR || path.join(process.cwd(), 'data')
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json')
 const FACTS_FILE = path.join(DATA_DIR, 'facts.json')
-const MAX_TURNS_PER_SESSION = 200
+const MAX_TURNS_PER_SESSION = Number(process.env.AURIX_MAX_TURNS || 200)
+const MAX_FACTS = Number(process.env.AURIX_MAX_FACTS || 100)
+const MAX_FACT_CHARS = 500
 
 function ensureDir() {
 	if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -30,7 +32,9 @@ function readJson(file, fallback) {
 
 function writeJson(file, value) {
 	ensureDir()
-	fs.writeFileSync(file, JSON.stringify(value, null, 2), 'utf8')
+	const tmp = file + '.tmp'
+	fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8')
+	fs.renameSync(tmp, file)
 }
 
 /** Appends one turn and returns the trimmed session history. */
@@ -38,7 +42,9 @@ export function appendTurn(sessionId, role, content) {
 	if (!sessionId) return []
 	const store = readJson(SESSIONS_FILE, {})
 	const turns = store[sessionId] || []
-	turns.push({ role, content, at: new Date().toISOString() })
+	const safeRole = role === 'assistant' ? 'assistant' : 'user'
+	const safeContent = String(content || '').slice(0, 12000)
+	turns.push({ role: safeRole, content: safeContent, at: new Date().toISOString() })
 	store[sessionId] = turns.slice(-MAX_TURNS_PER_SESSION)
 	writeJson(SESSIONS_FILE, store)
 	return store[sessionId]
@@ -78,9 +84,9 @@ export function rememberFact(text) {
 	if (!clean) return facts()
 	const all = facts()
 	if (!all.some((f) => f.text === clean)) {
-		all.push({ text: clean, at: new Date().toISOString() })
+		all.push({ text: clean.slice(0, MAX_FACT_CHARS), at: new Date().toISOString() })
 	}
-	writeJson(FACTS_FILE, all)
+	writeJson(FACTS_FILE, all.slice(-MAX_FACTS))
 	return all
 }
 
@@ -95,4 +101,15 @@ export function memoryPreamble() {
 	const all = facts()
 	if (all.length === 0) return ''
 	return '\n\nKnown facts about the user:\n' + all.map((f) => '- ' + f.text).join('\n')
+}
+
+export function memoryStats() {
+	const sessions = readJson(SESSIONS_FILE, {})
+	const allFacts = facts()
+	return {
+		sessions: Object.keys(sessions).length,
+		turns: Object.values(sessions).reduce((sum, turns) => sum + turns.length, 0),
+		facts: allFacts.length,
+		dataDir: DATA_DIR,
+	}
 }
