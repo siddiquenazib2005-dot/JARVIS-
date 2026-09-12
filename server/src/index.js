@@ -30,6 +30,7 @@ import {
 	forgetFact,
 	listSessions,
 	memoryPreamble,
+	memoryStats,
 	recentTurns,
 	rememberFact,
 } from './memory.js'
@@ -44,7 +45,21 @@ const DEFAULT_SYSTEM =
 	'Use Markdown when it improves clarity.'
 
 app.use(cors())
-app.use(express.json({ limit: '2mb' }))
+app.use(express.json({ limit: process.env.AURIX_JSON_LIMIT || '2mb' }))
+
+const buckets = new Map()
+app.use('/v1', (req, res, next) => {
+	const limit = Number(process.env.AURIX_RATE_LIMIT || 120)
+	const key = req.ip || req.headers['x-forwarded-for'] || 'local'
+	const now = Date.now()
+	const windowMs = 60_000
+	const b = buckets.get(key) || { start: now, count: 0 }
+	if (now - b.start > windowMs) { b.start = now; b.count = 0 }
+	b.count += 1
+	buckets.set(key, b)
+	if (b.count > limit) return res.status(429).json({ error: { message: 'Rate limit exceeded' } })
+	next()
+})
 
 app.use('/v1', (req, res, next) => {
 	if (!APP_TOKEN) return next()
@@ -68,6 +83,19 @@ app.get('/v1/health', (req, res) => {
 		providers: healthSnapshot(),
 		routeOrder: candidates().map((p) => p.id),
 		uptimeSeconds: Math.round(process.uptime()),
+		memory: memoryStats(),
+	})
+})
+
+app.get('/v1/diagnostics', (req, res) => {
+	res.json({
+		ok: true,
+		version: '1.1.0',
+		node: process.version,
+		uptimeSeconds: Math.round(process.uptime()),
+		configuredProviders: configuredProviders().map((p) => p.id),
+		providers: healthSnapshot(),
+		memory: memoryStats(),
 	})
 })
 
@@ -90,10 +118,20 @@ app.post('/v1/probe', async (req, res) => {
 	res.json(await probe(providerId))
 })
 
+function normalizeMessages(history) {
+	return history
+		.filter((m) => m && typeof m.content !== 'undefined')
+		.slice(-40)
+		.map((m) => ({
+			role: m.role === 'assistant' || m.role === 'system' ? m.role : 'user',
+			content: String(m.content || '').slice(0, 12000),
+		}))
+}
+
 function buildMessages(body) {
-	const history = Array.isArray(body?.messages) ? body.messages : []
+	const history = Array.isArray(body?.messages) ? normalizeMessages(body.messages) : []
 	if (history.length > 0) return history
-	const prompt = String(body?.prompt || '').trim()
+	const prompt = String(body?.prompt || '').trim().slice(0, 12000)
 	if (!prompt) return []
 	const sessionId = body?.sessionId
 	const prior = sessionId ? recentTurns(sessionId, 16) : []
