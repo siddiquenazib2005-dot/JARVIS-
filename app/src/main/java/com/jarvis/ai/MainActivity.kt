@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.jarvis.ai.core.JarvisRuntime
 import com.jarvis.ai.diagnostics.CrashGuard
+import com.jarvis.ai.diagnostics.StartupTracker
 import com.jarvis.ai.onboarding.OnboardingPrefs
 import com.jarvis.ai.ui.screens.ChatScreen
 import com.jarvis.ai.ui.screens.OnboardingScreen
@@ -53,6 +54,8 @@ class MainActivity : ComponentActivity() {
         // next "AURIX keeps stopping" leaves a stack trace behind instead of a
         // mystery. Readable in-app with the "crash log" command.
         CrashGuard.install(applicationContext)
+        StartupTracker.boot(applicationContext)
+        StartupTracker.stage(applicationContext, "ACTIVITY_CREATED", "MainActivity.onCreate entered")
 
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
@@ -63,14 +66,18 @@ class MainActivity : ComponentActivity() {
         // Must run before the first composition so the gate below reads real state.
         OnboardingPrefs.init(applicationContext)
 
+        StartupTracker.stage(applicationContext, "COMPOSE_START", "setContent about to run")
+
         setContent {
             JarvisTheme {
                 var ready by remember { mutableStateOf(false) }
                 var showOnboarding by remember { mutableStateOf(false) }
 
                 LaunchedEffect(Unit) {
+                    StartupTracker.stage(applicationContext, "COMPOSE_RENDERED", "startup shell visible")
                     showOnboarding = runCatching { OnboardingPrefs.needsOnboarding }.getOrDefault(false)
                     ready = true
+                    StartupTracker.stage(applicationContext, "UI_READY", if (showOnboarding) "onboarding" else "chat")
                 }
 
                 if (!ready) {
