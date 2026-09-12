@@ -23,8 +23,8 @@ android {
         applicationId = "com.aurix.ai.debug"
         minSdk = 26
         targetSdk = 35
-        versionCode = 26
-        versionName = "1.19.6-black-screen-fix"
+        versionCode = 28
+        versionName = "1.19.8-startup-flow"
         vectorDrawables {
             useSupportLibrary = true
         }
