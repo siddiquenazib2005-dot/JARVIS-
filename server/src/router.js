@@ -12,7 +12,8 @@
 import { PROVIDERS, configuredProviders, keysFor, providerById } from './providers.js'
 
 const COOLDOWN_MS = 60_000
-const REQUEST_TIMEOUT_MS = 90_000
+const REQUEST_TIMEOUT_MS = Number(process.env.AURIX_REQUEST_TIMEOUT_MS || 90_000)
+const RETRYABLE = new Set([408, 409, 425, 429, 500, 502, 503, 504])
 const NEUTRAL_SUCCESS = 0.8
 
 /** providerId -> health record */
@@ -124,10 +125,19 @@ async function fetchWithTimeout(url, options) {
 	const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 	try {
 		return await fetch(url, { ...options, signal: controller.signal })
+	} catch (err) {
+		if (err?.name === 'AbortError') {
+			const e = new Error('Provider timed out after ' + REQUEST_TIMEOUT_MS + 'ms')
+			e.status = 504
+			throw e
+		}
+		throw err
 	} finally {
 		clearTimeout(timer)
 	}
 }
+
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)) }
 
 /**
  * Calls one provider once. Returns { text, model, providerId, latencyMs }.
@@ -229,6 +239,7 @@ export async function complete({ messages, system, model, provider, temperature 
 		const requestedModel =
 			provider && candidate.id === provider ? model : candidate.defaultModel
 		for (const key of keysFor(candidate)) {
+			for (let tryNo = 0; tryNo < 2; tryNo += 1) {
 			try {
 				const result = await callProvider(candidate, key, {
 					messages,
@@ -246,6 +257,9 @@ export async function complete({ messages, system, model, provider, temperature 
 					error: err.message,
 				})
 				if (err.status === 401 || err.status === 403) break
+				if (!RETRYABLE.has(err.status || 0) || tryNo === 1) break
+				await sleep(350 + Math.floor(Math.random() * 250))
+			}
 			}
 		}
 	}
