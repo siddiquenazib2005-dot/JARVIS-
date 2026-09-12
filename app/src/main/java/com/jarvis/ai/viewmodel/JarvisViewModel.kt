@@ -14,6 +14,7 @@ import com.jarvis.ai.data.local.ChatDb
 import com.jarvis.ai.data.model.LatencyInfo
 import com.jarvis.ai.data.model.Message
 import com.jarvis.ai.data.model.Sender
+import com.jarvis.ai.diagnostics.StartupTracker
 import com.jarvis.ai.data.model.SessionInfo
 import com.jarvis.ai.data.model.UiState
 import com.jarvis.ai.health.SystemHealthReporter
@@ -52,6 +53,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 
 /**
@@ -182,20 +184,43 @@ class JarvisViewModel(
         _selectedModel.value = ModelCatalog.find(RoutingPrefs.pinnedProviderId, RoutingPrefs.pinnedModel)
 
         viewModelScope.launch(Dispatchers.IO + crashSafe) {
-            var sessions = db.sessions()
-            if (sessions.isEmpty()) {
-                val created = SessionInfo(title = DEFAULT_SESSION_TITLE)
-                db.createSession(created)
-                sessions = db.sessions()
+            StartupTracker.stage(appContext, "DB_LOADING", "loading sessions")
+            val loaded = withTimeoutOrNull(3000L) {
+                var sessions = db.sessions()
+                if (sessions.isEmpty()) {
+                    val created = SessionInfo(title = DEFAULT_SESSION_TITLE)
+                    db.createSession(created)
+                    sessions = db.sessions()
+                }
+                val active = sessions.first()
+                val restored = db.messages(active.id).takeLast(40)
+                Triple(sessions, active, restored)
             }
-            val active = sessions.first()
-            val restored = db.messages(active.id)
+            if (loaded == null) {
+                StartupTracker.stage(appContext, "DB_TIMEOUT", "chat database took too long")
+                val fallback = SessionInfo(title = DEFAULT_SESSION_TITLE)
+                _uiState.update {
+                    it.copy(
+                        messages = listOf(Message(sender = Sender.AURIX, text = "AURIX safe mode: chat history is taking too long, sir.")),
+                        sessions = listOf(fallback),
+                        activeSessionId = fallback.id,
+                        backendOnline = false,
+                        isLoading = false
+                    )
+                }
+                return@launch
+            }
+            val (sessions, active, restored) = loaded
+            StartupTracker.stage(appContext, "DB_READY", "${restored.size} messages restored")
+            val online = withTimeoutOrNull(2000L) { runtime.backendOnline() } ?: false
+            StartupTracker.stage(appContext, "CHAT_READY", "backendOnline=$online")
             _uiState.update {
                 it.copy(
                     messages = restored.ifEmpty { listOf(greetingMessage()) },
-                    backendOnline = runtime.backendOnline(),
+                    backendOnline = online,
                     sessions = sessions,
-                    activeSessionId = active.id
+                    activeSessionId = active.id,
+                    isLoading = false
                 )
             }
         }
@@ -609,6 +634,46 @@ class JarvisViewModel(
     fun isModelReady(option: ModelOption): Boolean =
         runCatching { runtime.secureStore.contains(option.envVarName) }.getOrDefault(false)
 
+
+    private fun isForcedLocalCommand(text: String): Boolean {
+        val t = text.lowercase()
+        return t.contains("whatsapp") ||
+            t.contains("sms") ||
+            t.contains("text message") ||
+            t.contains("message ") ||
+            t.contains(" bolo ") ||
+            t.startsWith("bolo ") ||
+            t.contains("call ") ||
+            t.startsWith("call ")
+    }
+
+    private fun handleForcedLocalAsync(sessionId: String, input: String) {
+        clearNotice()
+        val userMessage = Message(sender = Sender.USER, text = input)
+        val waiting = Message(sender = Sender.AURIX, text = "Working on that locally, sir...")
+        _uiState.update {
+            it.copy(messages = it.messages + userMessage + waiting, isLoading = true, latency = LatencyInfo())
+        }
+        viewModelScope.launch(Dispatchers.IO + crashSafe) {
+            db.appendMessage(sessionId, userMessage)
+            val reply = runCatching { quickCommands.handle(input) }
+                .getOrElse { error -> "That command failed on the device, sir: ${error.message ?: error::class.java.simpleName}" }
+                ?.takeIf { it.isNotBlank() }
+                ?: "I understood this as a device command, sir, but I could not map it safely."
+            val clean = if (QuickCommandRouter.isSoftFail(reply)) QuickCommandRouter.cleanFailure(reply) else reply
+            db.appendMessage(sessionId, waiting.copy(text = clean))
+            db.touchSession(sessionId)
+            refreshSessionsBlocking()
+            _uiState.update { state ->
+                state.copy(
+                    messages = state.messages.map { if (it.id == waiting.id) it.copy(text = clean) else it },
+                    isLoading = false
+                )
+            }
+            ttsQueue.value = clean
+        }
+    }
+
     private fun dispatchToOrchestrator(text: String, confirmed: Boolean) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || _uiState.value.isLoading) return
@@ -616,11 +681,16 @@ class JarvisViewModel(
         if (sessionId.isBlank()) return
 
         // Offline fast path: device commands must work with zero API keys.
-        //
-        // The router now reports its own failures as text, so no runCatching
-        // here: swallowing the exception is what made feature taps look dead.
-        // A blank/null result means "not a device command" and legitimately
-        // falls through to the AI path below.
+        // WhatsApp/SMS/call commands are forced local and run on IO. This prevents
+        // two bugs seen on device: provider safety refusals ("I can't use WhatsApp")
+        // and ANR from contact lookup / accessibility work on the UI thread.
+        if (!confirmed && isForcedLocalCommand(trimmed)) {
+            handleForcedLocalAsync(sessionId, trimmed)
+            return
+        }
+
+        // The remaining quick commands are cheap local checks. Heavy seams
+        // (image/email/photo) are handled separately below.
         if (!confirmed) {
             // Item 9: image requests are network work, so they get their own
             // async path instead of blocking the main thread inside the router.
