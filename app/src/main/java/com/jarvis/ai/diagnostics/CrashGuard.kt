@@ -65,6 +65,10 @@ object CrashGuard {
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    fun record(context: Context, error: Throwable) {
+        runCatching { persist(context.applicationContext, Thread.currentThread(), error) }
+    }
+
     private fun persist(context: Context, thread: Thread, error: Throwable) {
         val root = rootCause(error)
         val store = prefs(context)
