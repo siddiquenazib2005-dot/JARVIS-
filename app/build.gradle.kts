@@ -23,8 +23,8 @@ android {
         applicationId = "com.aurix.ai"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "1.19.2"
+        versionCode = 24
+        versionName = "1.19.4"
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -68,6 +68,17 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/NOTICE.md",
+                "META-INF/LICENSE.md",
+                "META-INF/NOTICE",
+                "META-INF/LICENSE"
+            )
+        }
     }
 }
 
