@@ -19,7 +19,30 @@ class ChatDb(context: Context) {
             db.execSQL(SQL_CREATE_MESSAGE_INDEX)
         }
 
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            if (oldVersion < 2) migrateMessagesSenderConstraint(db)
+        }
+
+        private fun migrateMessagesSenderConstraint(db: SQLiteDatabase) {
+            db.beginTransaction()
+            try {
+                db.execSQL("DROP INDEX IF EXISTS idx_messages_session")
+                db.execSQL(SQL_CREATE_MESSAGES_V2_TEMP)
+                db.execSQL(
+                    "INSERT OR REPLACE INTO ${TABLE_MESSAGES}_v2 " +
+                        "($COL_MSG_ID, $COL_SESSION_ID, $COL_SENDER, $COL_TEXT, $COL_TIMESTAMP, $COL_IS_ERROR) " +
+                        "SELECT $COL_MSG_ID, $COL_SESSION_ID, " +
+                        "CASE WHEN $COL_SENDER = 'JARVIS' THEN 'AURIX' ELSE $COL_SENDER END, " +
+                        "$COL_TEXT, $COL_TIMESTAMP, $COL_IS_ERROR FROM $TABLE_MESSAGES"
+                )
+                db.execSQL("DROP TABLE $TABLE_MESSAGES")
+                db.execSQL("ALTER TABLE ${TABLE_MESSAGES}_v2 RENAME TO $TABLE_MESSAGES")
+                db.execSQL(SQL_CREATE_MESSAGE_INDEX)
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+        }
 
         override fun onConfigure(db: SQLiteDatabase) {
             db.execSQL("PRAGMA foreign_keys=ON")
@@ -80,7 +103,7 @@ class ChatDb(context: Context) {
             while (cursor.moveToNext()) {
                 result += Message(
                     id = cursor.getString(0),
-                    sender = Sender.valueOf(cursor.getString(1)),
+                    sender = decodeSender(cursor.getString(1)),
                     text = cursor.getString(2),
                     timestamp = cursor.getLong(3),
                     isError = cursor.getInt(4) != 0
@@ -94,7 +117,7 @@ class ChatDb(context: Context) {
         val values = contentValues().apply {
             put(COL_MSG_ID, message.id)
             put(COL_SESSION_ID, sessionId)
-            put(COL_SENDER, message.sender.name)
+            put(COL_SENDER, encodeSender(message.sender))
             put(COL_TEXT, message.text)
             put(COL_TIMESTAMP, message.timestamp)
             put(COL_IS_ERROR, if (message.isError) 1 else 0)
@@ -110,9 +133,18 @@ class ChatDb(context: Context) {
 
     private fun contentValues() = ContentValues()
 
+    private fun encodeSender(sender: Sender): String = sender.name
+
+    private fun decodeSender(raw: String): Sender = when (raw) {
+        "JARVIS" -> Sender.AURIX
+        "AURIX" -> Sender.AURIX
+        "USER" -> Sender.USER
+        else -> Sender.AURIX
+    }
+
     companion object {
         private const val DB_NAME = "jarvis.db"
-        private const val DB_VERSION = 1
+        private const val DB_VERSION = 2
 
         private const val TABLE_SESSIONS = "sessions"
         private const val TABLE_MESSAGES = "messages"
@@ -138,7 +170,18 @@ class ChatDb(context: Context) {
             "CREATE TABLE $TABLE_MESSAGES (" +
                 "$COL_MSG_ID TEXT PRIMARY KEY, " +
                 "$COL_SESSION_ID TEXT NOT NULL REFERENCES $TABLE_SESSIONS($COL_ID) ON DELETE CASCADE, " +
-                "$COL_SENDER TEXT NOT NULL CHECK($COL_SENDER IN ('USER','JARVIS')), " +
+                "$COL_SENDER TEXT NOT NULL CHECK($COL_SENDER IN ('USER','AURIX','JARVIS')), " +
+                "$COL_TEXT TEXT NOT NULL, " +
+                "$COL_TIMESTAMP INTEGER NOT NULL, " +
+                "$COL_IS_ERROR INTEGER NOT NULL DEFAULT 0)"
+
+
+
+        private const val SQL_CREATE_MESSAGES_V2_TEMP =
+            "CREATE TABLE ${TABLE_MESSAGES}_v2 (" +
+                "$COL_MSG_ID TEXT PRIMARY KEY, " +
+                "$COL_SESSION_ID TEXT NOT NULL REFERENCES $TABLE_SESSIONS($COL_ID) ON DELETE CASCADE, " +
+                "$COL_SENDER TEXT NOT NULL CHECK($COL_SENDER IN ('USER','AURIX','JARVIS')), " +
                 "$COL_TEXT TEXT NOT NULL, " +
                 "$COL_TIMESTAMP INTEGER NOT NULL, " +
                 "$COL_IS_ERROR INTEGER NOT NULL DEFAULT 0)"

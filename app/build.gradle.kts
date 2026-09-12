@@ -23,8 +23,8 @@ android {
         applicationId = "com.aurix.ai.debug"
         minSdk = 26
         targetSdk = 35
-        versionCode = 28
-        versionName = "1.19.8-startup-flow"
+        versionCode = 30
+        versionName = "1.20.0-accessibility-safe"
         vectorDrawables {
             useSupportLibrary = true
         }
