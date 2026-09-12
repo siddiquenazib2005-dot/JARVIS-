@@ -452,6 +452,14 @@ class QuickCommandRouter(context: Context) {
         if (wantsCrash) {
             return com.jarvis.ai.diagnostics.CrashGuard.report(app)
         }
+        val wantsStartup = matches(
+            text,
+            "startup report", "boot report", "startup status", "why startup stuck",
+            "app start report", "launch report", "opening report"
+        )
+        if (wantsStartup) {
+            return com.jarvis.ai.diagnostics.StartupTracker.report(app)
+        }
         val asked = matches(
             text,
             "self check", "selfcheck", "self-check", "diagnostic", "diagnose",
@@ -544,9 +552,28 @@ class QuickCommandRouter(context: Context) {
                 recipient = tail.substringBefore(marker).trim()
                 body = tail.substringAfter(marker).trim()
             } else {
-                val words = tail.split(" ")
-                recipient = words.firstOrNull()?.trim()
-                body = words.drop(1).joinToString(" ").trim()
+                val words = tail.split(" ").filter { it.isNotBlank() }
+                // Prefer the longest likely contact name before the message.
+                // Example: "to boss madam sorry" -> contact="boss madam", body="sorry".
+                recipient = when {
+                    words.size >= 3 -> words.take(2).joinToString(" ")
+                    else -> words.firstOrNull().orEmpty()
+                }.trim()
+                body = when {
+                    words.size >= 3 -> words.drop(2).joinToString(" ")
+                    else -> words.drop(1).joinToString(" ")
+                }.trim()
+            }
+        }
+
+        // Hinglish shortcut: "boss madam ko whatsapp per bolo ki sorry yr"
+        if (recipient.isNullOrBlank()) {
+            val koIndex = text.indexOf(" ko ")
+            val boloMarkers = listOf(" bolo ki ", " bolo ", " keh do ", " bol do ")
+            val marker = boloMarkers.firstOrNull { text.contains(it) }
+            if (koIndex > 0 && marker != null && text.contains("whatsapp")) {
+                recipient = text.substring(0, koIndex).trim()
+                body = text.substringAfter(marker).trim()
             }
         }
 
