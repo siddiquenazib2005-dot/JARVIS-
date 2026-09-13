@@ -7,10 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
-import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -31,9 +29,6 @@ class JarvisAccessibilityService : AccessibilityService() {
     private val actionMutex = Mutex()
 
     companion object {
-        private const val TAG = "AurixA11y"
-        private const val MAX_ACTION_RETRIES = 2
-
         @Volatile
         var instance: JarvisAccessibilityService? = null
             private set
@@ -108,52 +103,99 @@ class JarvisAccessibilityService : AccessibilityService() {
         }
     }
 
-    override fun onServiceConnected() {
-        super.onServiceConnected()
+    /** True only after every action dependency has been constructed. */
+    private fun enginesReady(): Boolean =
+        ::gestureEngine.isInitialized && ::screenReader.isInitialized
+
+    /**
+     * Builds the action engines without publishing this service globally.
+     * This keeps callers from observing a half-initialized service.
+     */
+    private fun initializeEngines(): Boolean {
+        stateFlow.value = A11yServiceState.CONNECTING
+        val newGestureEngine = runCatching { GestureEngine(this) }.getOrElse { error ->
+            AccessibilityLogger.error("GESTURE_INIT_FAILED", AccessibilityLogger.redact(error.message))
+            com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce(
+                "accessibility",
+                "gesture init failed: ${error.message ?: error::class.java.simpleName}"
+            )
+            com.jarvis.ai.diagnostics.CrashGuard.record(this, error)
+            return false
+        }
+        val newScreenReader = runCatching { ScreenReader(this) }.getOrElse { error ->
+            AccessibilityLogger.error("SCREEN_READER_INIT_FAILED", AccessibilityLogger.redact(error.message))
+            com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce(
+                "accessibility",
+                "screen reader init failed: ${error.message ?: error::class.java.simpleName}"
+            )
+            com.jarvis.ai.diagnostics.CrashGuard.record(this, error)
+            return false
+        }
+        gestureEngine = newGestureEngine
+        screenReader = newScreenReader
+        return true
+    }
+
+    private fun publishAvailable(recovered: Boolean = false) {
         instance = this
         stateFlow.value = A11yServiceState.AVAILABLE
-        AccessibilityLogger.command("accessibility service connected")
-        com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "connected")
-        runCatching { gestureEngine = GestureEngine(this) }.onFailure { error ->
-            AccessibilityLogger.error("GESTURE_INIT_FAILED", AccessibilityLogger.redact(error.message))
-            com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "gesture init failed: ${error.message ?: error::class.java.simpleName}")
-        }
-        runCatching { screenReader = ScreenReader(this) }.onFailure { error ->
-            AccessibilityLogger.error("SCREEN_READER_INIT_FAILED", AccessibilityLogger.redact(error.message))
-            com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "screen reader init failed: ${error.message ?: error::class.java.simpleName}")
+        AccessibilityLogger.command(
+            if (recovered) "accessibility service recovered" else "accessibility service connected"
+        )
+        com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce(
+            "accessibility",
+            if (recovered) "recovered" else "connected"
+        )
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        // Never expose this generation until both engines are ready.
+        if (instance === this) instance = null
+        if (initializeEngines()) {
+            publishAvailable()
+        } else {
+            stateFlow.value = A11yServiceState.SUSPENDED
         }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null || stateFlow.value == A11yServiceState.AVAILABLE) return
         runCatching {
-            if (event == null) return
-            if (stateFlow.value != A11yServiceState.AVAILABLE) {
-                stateFlow.value = A11yServiceState.AVAILABLE
+            // onInterrupt may suspend a fully initialized service. A genuine
+            // initialization failure gets one safe reconstruction attempt when
+            // Android starts delivering events again.
+            if (enginesReady() || initializeEngines()) {
+                publishAvailable(recovered = true)
+            } else {
+                stateFlow.value = A11yServiceState.SUSPENDED
             }
         }.onFailure { error ->
-            AccessibilityLogger.error("EVENT_FAILED", AccessibilityLogger.redact(error.message))
+            stateFlow.value = A11yServiceState.SUSPENDED
+            if (instance === this) instance = null
+            AccessibilityLogger.error("EVENT_RECOVERY_FAILED", AccessibilityLogger.redact(error.message))
             com.jarvis.ai.diagnostics.CrashGuard.record(this, error)
         }
     }
 
     override fun onInterrupt() {
-        runCatching {
-            stateFlow.value = A11yServiceState.SUSPENDED
-            AccessibilityLogger.error("SERVICE_INTERRUPTED", "service interrupted")
-            com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "interrupted")
-        }
+        stateFlow.value = A11yServiceState.SUSPENDED
+        AccessibilityLogger.error("SERVICE_INTERRUPTED", "service interrupted")
+        com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "interrupted")
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
         stateFlow.value = A11yServiceState.DISCONNECTED
-        instance = null
+        // A delayed callback from an old service generation must not clear a
+        // newer instance that Android has already connected.
+        if (instance === this) instance = null
         com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "unbound")
         return runCatching { super.onUnbind(intent) }.getOrDefault(false)
     }
 
     override fun onDestroy() {
         stateFlow.value = A11yServiceState.DISCONNECTED
-        instance = null
+        if (instance === this) instance = null
         com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "destroyed")
         runCatching { super.onDestroy() }
     }
