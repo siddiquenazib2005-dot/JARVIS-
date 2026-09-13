@@ -161,80 +161,40 @@ class DeviceActionPack(context: Context) {
     // Communication
     // ------------------------------------------------------------------
 
-    /**
-     * WhatsApp a person.
-     *
-     * Ambiguity is surfaced instead of guessed: messaging the wrong "Papa" is
-     * far worse than one clarifying question.
-     */
+    /** WhatsApp a person. */
     fun whatsapp(contact: String, message: String): String {
         when (val lookup = ContactResolver.lookup(app, contact)) {
             is ContactLookup.Ambiguous -> return ambiguityPrompt(contact, lookup.matches)
-            is ContactLookup.None -> if (ContactResolver.hasPermission(app)) {
-                // Named target that matched nobody is very likely a group chat.
-                return whatsappGroup(contact, message)
-            }
+            is ContactLookup.None -> if (ContactResolver.hasPermission(app)) return whatsappGroup(contact, message)
             else -> Unit
         }
         val number = resolveNumber(contact)
         val text = Uri.encode(message)
         val digits = number?.filter { it.isDigit() }
-        val uri = if (!digits.isNullOrBlank()) {
-            Uri.parse("https://wa.me/" + digits + "?text=" + text)
-        } else {
-            Uri.parse("https://wa.me/?text=" + text)
-        }
+        val uri = if (!digits.isNullOrBlank()) Uri.parse("https://wa.me/" + digits + "?text=" + text)
+        else Uri.parse("https://wa.me/?text=" + text)
         val intent = Intent(Intent.ACTION_VIEW, uri).setPackage("com.whatsapp")
         if (launch(intent)) {
-            if (digits.isNullOrBlank()) {
-                return ok("WhatsApp is open with your message ready, sir. Pick the contact.")
-            }
-            // Finish the send automatically when Accessibility is available;
-            // otherwise the user still gets a pre-filled chat to tap.
+            if (digits.isNullOrBlank()) return ok("WhatsApp is open with your message ready, sir. Pick the contact.")
             val automated = screen.autoSend(
                 packageName = "com.whatsapp",
-                viewIds = listOf(
-                    "com.whatsapp:id/send",
-                    "com.whatsapp:id/bottom_sheet_send_button",
-                    "com.whatsapp:id/send_container"
-                ),
+                viewIds = listOf("com.whatsapp:id/send", "com.whatsapp:id/bottom_sheet_send_button", "com.whatsapp:id/send_container"),
                 labels = listOf("Send", "send")
             )
-            return ok(
-                if (automated) "Sending \"$message\" to $contact on WhatsApp now, sir."
-                else "WhatsApp chat with $contact is open — tap send, sir. " +
-                    "Enable AURIX in Accessibility settings and I'll press send myself."
-            )
+            return ok(if (automated) "Sending \"$message\" to $contact on WhatsApp now, sir."
+                else "WhatsApp chat with $contact is open — tap send, sir. Enable AURIX in Accessibility settings and I'll press send myself.")
         }
-        return if (launch(Intent(Intent.ACTION_VIEW, uri))) {
-            ok("Opening WhatsApp, sir.")
-        } else fail("reach WhatsApp")
+        return if (launch(Intent(Intent.ACTION_VIEW, uri))) ok("Opening WhatsApp, sir.") else fail("reach WhatsApp")
     }
 
-    /**
-     * WhatsApp a group (or any chat) by its visible name.
-     *
-     * Groups have no phone number, so wa.me cannot address them at all. The
-     * only path is WhatsApp's own search box, driven through Accessibility.
-     */
     fun whatsappGroup(chatName: String, message: String): String {
         val name = chatName.trim()
         if (name.isBlank()) return "Which chat should I message, sir?"
         if (message.isBlank()) return "What should I send to $name, sir?"
-
-        val launcher = Intent(Intent.ACTION_MAIN)
-            .addCategory(Intent.CATEGORY_LAUNCHER)
-            .setPackage("com.whatsapp")
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage("com.whatsapp")
         if (!launch(launcher)) return fail("reach WhatsApp")
-
-        return if (screen.openChatAndSend(name, message)) {
-            ok("Searching WhatsApp for \"$name\" and sending your message, sir.")
-        } else {
-            ok(
-                "WhatsApp is open, sir — I need Accessibility to search for \"$name\" " +
-                    "and send it myself. Turn it on from menu → Permissions & access."
-            )
-        }
+        return if (screen.openChatAndSend(name, message)) ok("Searching WhatsApp for \"$name\" and sending your message, sir.")
+        else ok("WhatsApp is open, sir — I need Accessibility to search for \"$name\" and send it myself. Turn it on from menu → Permissions & access.")
     }
 
     fun sms(contact: String, message: String): String {
@@ -243,21 +203,14 @@ class DeviceActionPack(context: Context) {
             else -> Unit
         }
         val number = resolveNumber(contact) ?: contact
-        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$number"))
-            .putExtra("sms_body", message)
+        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$number")).putExtra("sms_body", message)
         if (!launch(intent)) return fail("open the messaging app")
         val automated = screen.autoSend(
             packageName = "com.google.android.apps.messaging",
-            viewIds = listOf(
-                "com.google.android.apps.messaging:id/send_message_button_icon",
-                "com.google.android.apps.messaging:id/send_message_button"
-            ),
+            viewIds = listOf("com.google.android.apps.messaging:id/send_message_button_icon", "com.google.android.apps.messaging:id/send_message_button"),
             labels = listOf("Send SMS", "Send message", "Send")
         )
-        return ok(
-            if (automated) "Sending that SMS to $contact now, sir."
-            else "SMS to $contact is drafted — tap send, sir."
-        )
+        return ok(if (automated) "Sending that SMS to $contact now, sir." else "SMS to $contact is drafted — tap send, sir.")
     }
 
     fun email(to: String, subject: String, body: String): String {
@@ -275,9 +228,7 @@ class DeviceActionPack(context: Context) {
         }
         val number = resolveNumber(contact) ?: contact.filter { it.isDigit() || it == '+' }
         if (number.isBlank()) return "I could not find a number for $contact, sir."
-        val granted = ContextCompat.checkSelfPermission(
-            app, android.Manifest.permission.CALL_PHONE
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val granted = ContextCompat.checkSelfPermission(app, android.Manifest.permission.CALL_PHONE) == android.content.pm.PackageManager.PERMISSION_GRANTED
         val action = if (granted) Intent.ACTION_CALL else Intent.ACTION_DIAL
         val intent = Intent(action, Uri.parse("tel:$number"))
         return if (launch(intent)) {
@@ -285,94 +236,53 @@ class DeviceActionPack(context: Context) {
         } else fail("place the call")
     }
 
-    fun dialpad(): String =
-        if (launch(Intent(Intent.ACTION_DIAL))) ok("Dialler open, sir.") else fail("open the dialler")
+    fun dialpad(): String = if (launch(Intent(Intent.ACTION_DIAL))) ok("Dialler open, sir.") else fail("open the dialler")
 
     fun callLog(): String {
         val intent = Intent(Intent.ACTION_VIEW).setType("vnd.android.cursor.dir/calls")
         return if (launch(intent)) ok("Call log open, sir.") else fail("open the call log")
     }
 
-    fun contactLookup(name: String): String =
-        when (val lookup = ContactResolver.lookup(app, name)) {
-            is ContactLookup.RawNumber -> "That is already a number, sir: ${lookup.number}"
-            is ContactLookup.Single ->
-                lookup.match.name + " — " + lookup.match.number +
-                    if (lookup.match.label.isNotBlank()) " (${lookup.match.label})" else ""
-            is ContactLookup.Ambiguous ->
-                "I found ${lookup.matches.size} matches for \"$name\", sir:\n" +
-                    lookup.matches.joinToString("\n") { "• " + it.name + " — " + it.number }
-            is ContactLookup.None -> "I found no contact matching \"$name\", sir — ${lookup.reason}."
-        }
+    fun contactLookup(name: String): String = when (val lookup = ContactResolver.lookup(app, name)) {
+        is ContactLookup.RawNumber -> "That is already a number, sir: ${lookup.number}"
+        is ContactLookup.Single -> lookup.match.name + " — " + lookup.match.number + if (lookup.match.label.isNotBlank()) " (${lookup.match.label})" else ""
+        is ContactLookup.Ambiguous -> "I found ${lookup.matches.size} matches for \"$name\", sir:\n" + lookup.matches.joinToString("\n") { "• " + it.name + " — " + it.number }
+        is ContactLookup.None -> "I found no contact matching \"$name\", sir — ${lookup.reason}."
+    }
 
-    /** Saves who to alert in an emergency. */
     fun setSosContact(contact: String): String {
         when (val lookup = ContactResolver.lookup(app, contact)) {
-            is ContactLookup.RawNumber -> {
-                SosStore.save(app, contact.trim(), lookup.number)
-                return ok("SOS contact saved: ${lookup.number}, sir.")
-            }
-            is ContactLookup.Single -> {
-                SosStore.save(app, lookup.match.name, lookup.match.number)
-                return ok("SOS contact saved: ${lookup.match.name}, sir.")
-            }
+            is ContactLookup.RawNumber -> { SosStore.save(app, contact.trim(), lookup.number); return ok("SOS contact saved: ${lookup.number}, sir.") }
+            is ContactLookup.Single -> { SosStore.save(app, lookup.match.name, lookup.match.number); return ok("SOS contact saved: ${lookup.match.name}, sir.") }
             is ContactLookup.Ambiguous -> return ambiguityPrompt(contact, lookup.matches)
-            is ContactLookup.None ->
-                return "I could not find \"$contact\", sir — ${lookup.reason}. " +
-                    "Give me the number instead."
+            is ContactLookup.None -> return "I could not find \"$contact\", sir — ${lookup.reason}. Give me the number instead."
         }
     }
 
-    /** Human-readable ambiguity question, used by every messaging path. */
     private fun ambiguityPrompt(query: String, matches: List<ContactMatch>): String =
-        "I found more than one \"$query\", sir — which one?\n" +
-            matches.joinToString("\n") { "• " + ContactResolver.describe(it) } +
-            "\nSay the full name, or give me the number."
+        "I found more than one \"$query\", sir — which one?\n" + matches.joinToString("\n") { "• " + ContactResolver.describe(it) } + "\nSay the full name, or give me the number."
 
-    /**
-     * Emergency message to the saved SOS contact, with location when available.
-     *
-     * Falls back to the stored contact when the caller passes nothing, which is
-     * what every caller actually does.
-     */
     fun sos(sosContact: String? = null): String {
-        val target = sosContact?.takeIf { it.isNotBlank() }
-            ?: SosStore.contactNumber(app)
+        val target = sosContact?.takeIf { it.isNotBlank() } ?: SosStore.contactNumber(app)
         val link = SosStore.locationLink(app)
-        val message = "SOS! I need help. Sent by AURIX." +
-            if (link != null) " My location: $link" else ""
-
+        val message = "SOS! I need help. Sent by AURIX." + if (link != null) " My location: $link" else ""
         if (target.isNullOrBlank()) {
-            val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:"))
-                .putExtra("sms_body", message)
-            return if (launch(intent)) {
-                "No SOS contact is saved yet, sir — I opened a message so you can pick one. " +
-                    "Say \"set sos contact <name>\" and next time I'll send it straight away."
-            } else fail("start an SOS message")
+            val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:")).putExtra("sms_body", message)
+            return if (launch(intent)) "No SOS contact is saved yet, sir — I opened a message so you can pick one. Say \"set sos contact <name>\" and next time I'll send it straight away."
+            else fail("start an SOS message")
         }
         val name = SosStore.contactName(app) ?: target
         val result = sms(target, message)
-        return if (link == null) {
-            result + " Location was unavailable, so I sent the alert without it."
-        } else result.replace(target, name)
+        return if (link == null) result + " Location was unavailable, so I sent the alert without it." else result.replace(target, name)
     }
 
-    /**
-     * Single number for a spoken name.
-     *
-     * Now delegates to [ContactResolver], which scores candidates instead of
-     * taking the provider's first row. Callers that care about ambiguity check
-     * [ContactResolver.lookup] themselves before reaching here.
-     */
-    private fun resolveNumber(contact: String): String? =
-        ContactResolver.bestNumber(app, contact)
+    private fun resolveNumber(contact: String): String? = ContactResolver.bestNumber(app, contact)
 
     // ------------------------------------------------------------------
     // Media
     // ------------------------------------------------------------------
 
-    private fun audio(): AudioManager? =
-        app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private fun audio(): AudioManager? = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
     private fun mediaKey(code: Int): Boolean {
         val am = audio() ?: return false
@@ -383,64 +293,41 @@ class DeviceActionPack(context: Context) {
         }.getOrDefault(false)
     }
 
-    fun playPause(): String =
-        if (mediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)) ok("Toggled playback, sir.")
-        else fail("control playback")
-
-    fun nextTrack(): String =
-        if (mediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)) ok("Next track, sir.") else fail("skip the track")
-
-    fun previousTrack(): String =
-        if (mediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)) ok("Previous track, sir.")
-        else fail("go back a track")
-
-    fun stopPlayback(): String =
-        if (mediaKey(KeyEvent.KEYCODE_MEDIA_STOP)) ok("Playback stopped, sir.")
-        else fail("stop playback")
+    fun playPause(): String = if (mediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)) ok("Toggled playback, sir.") else fail("control playback")
+    fun nextTrack(): String = if (mediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)) ok("Next track, sir.") else fail("skip the track")
+    fun previousTrack(): String = if (mediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)) ok("Previous track, sir.") else fail("go back a track")
+    fun stopPlayback(): String = if (mediaKey(KeyEvent.KEYCODE_MEDIA_STOP)) ok("Playback stopped, sir.") else fail("stop playback")
 
     fun setVolumePercent(percent: Int): String {
         val am = audio() ?: return fail("reach the audio service")
         val safe = percent.coerceIn(0, 100)
-        // getStreamMaxVolume used to sit outside the guard, so an OEM audio
-        // service throwing here escaped as a hard crash instead of a reply.
         return runCatching {
             val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             val target = (max * safe / 100).coerceIn(0, max)
             am.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
             ok("Media volume set to " + safe + " percent, sir.")
         }.getOrElse { error ->
-            lastFailure = error.message?.takeIf { it.isNotBlank() }?.take(120)
-                ?: error::class.java.simpleName
+            lastFailure = error.message?.takeIf { it.isNotBlank() }?.take(120) ?: error::class.java.simpleName
             fail("change the volume")
         }
     }
 
     fun volumeUp(): String = stepVolume(AudioManager.ADJUST_RAISE, "up")
-
     fun volumeDown(): String = stepVolume(AudioManager.ADJUST_LOWER, "down")
 
     private fun stepVolume(direction: Int, word: String): String {
         val am = audio() ?: return fail("reach the audio service")
-        return runCatching {
-            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0)
-            ok("Volume $word, sir.")
-        }.getOrElse { fail("change the volume") }
+        return runCatching { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0); ok("Volume $word, sir.") }.getOrElse { fail("change the volume") }
     }
 
     fun mute(): String {
         val am = audio() ?: return fail("reach the audio service")
-        return runCatching {
-            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0)
-            ok("Muted, sir.")
-        }.getOrElse { fail("mute audio") }
+        return runCatching { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0); ok("Muted, sir.") }.getOrElse { fail("mute audio") }
     }
 
     fun unmute(): String {
         val am = audio() ?: return fail("reach the audio service")
-        return runCatching {
-            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
-            ok("Unmuted, sir.")
-        }.getOrElse { fail("unmute audio") }
+        return runCatching { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0); ok("Unmuted, sir.") }.getOrElse { fail("unmute audio") }
     }
 
     fun openMusicApp(): String {
@@ -453,12 +340,10 @@ class DeviceActionPack(context: Context) {
     // ------------------------------------------------------------------
 
     fun torch(on: Boolean): String {
-        val manager = app.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
-            ?: return fail("reach the camera service")
+        val manager = app.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return fail("reach the camera service")
         return runCatching {
             val id = manager.cameraIdList.firstOrNull { camId ->
-                manager.getCameraCharacteristics(camId)
-                    .get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                manager.getCameraCharacteristics(camId).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
             } ?: return "This device has no flash, sir."
             manager.setTorchMode(id, on)
             ok(if (on) "Flashlight on, sir." else "Flashlight off, sir.")
@@ -486,6 +371,23 @@ class DeviceActionPack(context: Context) {
         }
     }
 
+    fun setBrightnessPercent(percent: Int): String {
+        val safe = percent.coerceIn(0, 100)
+        val canWrite = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) Settings.System.canWrite(app) else true
+        if (!canWrite) {
+            val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).setData(Uri.parse("package:${app.packageName}"))
+            return if (launch(intent)) "I opened Write Settings permission, sir. Allow it once, then ask brightness $safe% again."
+            else "I need Write Settings permission to change brightness, sir."
+        }
+        return runCatching {
+            Settings.System.putInt(app.contentResolver, Settings.System.SCREEN_BRIGHTNESS, safe * 255 / 100)
+            ok("Brightness set to $safe percent, sir.")
+        }.getOrElse { error ->
+            lastFailure = error.message?.takeIf { it.isNotBlank() }?.take(120) ?: error::class.java.simpleName
+            fail("change brightness")
+        }
+    }
+
     fun setAlarm(hour: Int, minute: Int, label: String): String {
         val intent = Intent(AlarmClock.ACTION_SET_ALARM)
             .putExtra(AlarmClock.EXTRA_HOUR, hour)
@@ -501,9 +403,7 @@ class DeviceActionPack(context: Context) {
             .putExtra(AlarmClock.EXTRA_LENGTH, seconds.coerceAtLeast(1))
             .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
         if (label.isNotBlank()) intent.putExtra(AlarmClock.EXTRA_MESSAGE, label)
-        return if (launch(intent)) {
-            ok("Timer running for ${seconds / 60}m ${seconds % 60}s, sir.")
-        } else fail("start a timer")
+        return if (launch(intent)) ok("Timer running for ${seconds / 60}m ${seconds % 60}s, sir.") else fail("start a timer")
     }
 
     fun openSettings(section: String): String {
@@ -527,16 +427,12 @@ class DeviceActionPack(context: Context) {
             "developer" -> Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS
             else -> Settings.ACTION_SETTINGS
         }
-        return if (launch(Intent(action))) {
-            ok("Settings opened, sir.")
-        } else fail("open that settings page")
+        return if (launch(Intent(action))) ok("Settings opened, sir.") else fail("open that settings page")
     }
 
     fun openAccessibilitySettings(): String = openSettings("accessibility")
 
-    fun lockScreenHint(): String =
-        "Screen lock needs a device-admin grant, sir. I opened Security so you can enable it."
-            .also { openSettings("security") }
+    fun lockScreenHint(): String = "Screen lock needs a device-admin grant, sir. I opened Security so you can enable it.".also { openSettings("security") }
 
     // ------------------------------------------------------------------
     // Files, photos & camera
@@ -553,17 +449,13 @@ class DeviceActionPack(context: Context) {
     }
 
     fun openFiles(): String {
-        val intent = Intent(Intent.ACTION_GET_CONTENT).setType("*/*")
-            .addCategory(Intent.CATEGORY_OPENABLE)
+        val intent = Intent(Intent.ACTION_GET_CONTENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE)
         return if (launch(intent)) ok("File picker open, sir.") else fail("open a file manager")
     }
 
     fun shareText(text: String): String {
-        val intent = Intent(Intent.ACTION_SEND).setType("text/plain")
-            .putExtra(Intent.EXTRA_TEXT, text)
-        return if (launch(Intent.createChooser(intent, "Share"))) {
-            ok("Share sheet open, sir.")
-        } else fail("open the share sheet")
+        val intent = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+        return if (launch(Intent.createChooser(intent, "Share"))) ok("Share sheet open, sir.") else fail("open the share sheet")
     }
 
     // ------------------------------------------------------------------
@@ -573,30 +465,21 @@ class DeviceActionPack(context: Context) {
     fun navigate(destination: String): String {
         if (destination.isBlank()) return "Where should I navigate to, sir?"
         val uri = Uri.parse("google.navigation:q=" + Uri.encode(destination))
-        if (launch(Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.apps.maps"))) {
-            return ok("Navigating to $destination, sir.")
-        }
-        val web = Uri.parse(
-            "https://www.google.com/maps/dir/?api=1&destination=" + Uri.encode(destination)
-        )
-        return if (launch(Intent(Intent.ACTION_VIEW, web))) {
-            ok("Route to $destination opened, sir.")
-        } else fail("open maps")
+        if (launch(Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.apps.maps"))) return ok("Navigating to $destination, sir.")
+        val web = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=" + Uri.encode(destination))
+        return if (launch(Intent(Intent.ACTION_VIEW, web))) ok("Route to $destination opened, sir.") else fail("open maps")
     }
 
     fun findNearby(place: String): String {
         val uri = Uri.parse("geo:0,0?q=" + Uri.encode(place))
-        return if (launch(Intent(Intent.ACTION_VIEW, uri))) {
-            ok("Showing nearby $place, sir.")
-        } else fail("open maps")
+        return if (launch(Intent(Intent.ACTION_VIEW, uri))) ok("Showing nearby $place, sir.") else fail("open maps")
     }
 
     fun openMaps(): String = findNearby("")
 
     /** Opens the app's own info screen (permissions, storage, force stop). */
     fun openAppInfo(): String {
-        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-            .setData(Uri.parse("package:${app.packageName}"))
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(Uri.parse("package:${app.packageName}"))
         return if (launch(intent)) ok("App info open, sir.") else fail("open app info")
     }
 
