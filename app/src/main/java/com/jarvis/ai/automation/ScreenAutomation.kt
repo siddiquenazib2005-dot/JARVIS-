@@ -23,7 +23,9 @@ class ScreenAutomation(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** True when the user has granted AURIX accessibility access. */
-    fun isReady(): Boolean = JarvisAccessibilityService.isConnected()
+    fun isReady(): Boolean = JarvisAccessibilityService.isConnected() || JarvisAccessibilityService.isAccessibilityServiceEnabled(app)
+
+    fun report(): String = JarvisAccessibilityService.diagnosticsReport(app)
 
     /** Opens system settings so the user can switch the service on. */
     fun requestPermission(): String {

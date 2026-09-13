@@ -135,6 +135,18 @@ object ToolRegistry {
             confirmationRequired = true,
             confirmationMessage = "Do you want to send this email?"
         ),
+        "call_contact" to ToolDefinition(
+            name = "call_contact",
+            description = "Call a contact or phone number",
+            category = "phone",
+            parameters = mapOf(
+                "contact" to "Contact name or phone number"
+            ),
+            permission = "android.permission.CALL_PHONE",
+            riskLevel = RiskLevel.MEDIUM,
+            confirmationRequired = true,
+            confirmationMessage = "Do you want to place this call?"
+        ),
         "memory_read" to ToolDefinition(
             name = "memory_read",
             description = "Read stored memories",
@@ -199,5 +211,5 @@ object ToolRegistry {
 /** Returns the tool definition for the given intent. */
 fun tool(intent: String): ToolDefinition? = ToolRegistry.getTool(intent)
 
-/** Returns whether a tool can handle the given intent. */
-fun canHandle(intent: String): Boolean = ToolRegistry.isAvailable(intent)
+/** Returns all tool definitions. */
+fun allTools(): List<ToolDefinition> = ToolRegistry.getAllToolNames().mapNotNull { ToolRegistry.getTool(it) }
