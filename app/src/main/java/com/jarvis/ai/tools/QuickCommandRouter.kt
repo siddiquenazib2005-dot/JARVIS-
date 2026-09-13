@@ -2,6 +2,8 @@ package com.jarvis.ai.tools
 
 import android.content.Context
 import com.jarvis.ai.automation.ScreenAutomation
+import com.jarvis.ai.memory.MemoryEngine
+import com.jarvis.ai.memory.SecureKvStore
 import com.jarvis.ai.missions.Mission
 import com.jarvis.ai.missions.MissionEngine
 import com.jarvis.ai.notifications.AurixNotificationListener
@@ -34,6 +36,7 @@ class QuickCommandRouter(context: Context) {
     private val screen = ScreenAutomation(context)
     private val missions = MissionEngine(context)
     private val world = MyWorldStore(context)
+    private val memory = MemoryEngine(SecureKvStore(context))
 
     /**
      * Returns a reply when the input was fully handled locally, else null.
@@ -193,7 +196,18 @@ class QuickCommandRouter(context: Context) {
             return FloatingAvatarService.hide(app)
         }
 
+        // ---------- Offline memory recall ----------
+        if (matches(text, "what is my name", "my name is ?", "my name?", "mera naam kya", "mera name kya")) {
+            val saved = memory.recallFact("name")
+                ?: memory.allFacts()["name"]
+            return if (!saved.isNullOrBlank()) "Your name is $saved, sir."
+            else "I do not know your name yet, sir. Say: remember my name is Nazib."
+        }
+
         // ---------- Screen automation ----------
+        if (matches(text, "accessibility report", "screen control report", "a11y report")) {
+            return screen.report()
+        }
         if (matches(text, "what's on my screen", "whats on my screen", "read screen", "read my screen", "screen padho")) {
             return screen.readScreen()
         }
@@ -227,6 +241,13 @@ class QuickCommandRouter(context: Context) {
         // ---------- Flashlight / torch ----------
         if (matches(text, "flashlight", "flash light", "torch", "tourch")) {
             return actions.torch(!isOffRequest(text))
+        }
+
+        // ---------- Brightness ----------
+        percentIn(text)?.let { pct ->
+            if (text.contains("brightness") || text.contains("screen light") || text.contains("roshni")) {
+                return actions.setBrightnessPercent(pct)
+            }
         }
 
         // ---------- Battery ----------
@@ -538,14 +559,24 @@ class QuickCommandRouter(context: Context) {
      */
     private fun parseMessage(text: String, channels: List<String>): Pair<String, String>? {
         if (channels.none { text.contains(it) }) return null
-        if (!matches(text, "send", "message", "msg", "bhej", "karo")) return null
+        if (!matches(text, "send", "message", "msg", "bhej", "karo", "saying", "bolo", "whatsapp", "sms")) return null
 
-        val bodyMarkers = listOf(" saying ", " that says ", " message ", " msg ", " bolo ", " likho ")
+        val bodyMarkers = listOf(" saying ", " that says ", " message ", " msg ", " bolo ki ", " bolo ", " keh do ", " bol do ", " likho ")
         var recipient: String? = null
         var body: String? = null
 
+        val directChannel = channels.firstOrNull { text.startsWith("$it to ") }
+        if (directChannel != null) {
+            val tail = text.removePrefix("$directChannel to " ).trim()
+            val marker = bodyMarkers.firstOrNull { tail.contains(it) }
+            if (marker != null) {
+                recipient = tail.substringBefore(marker).trim()
+                body = tail.substringAfter(marker).trim()
+            }
+        }
+
         val toIndex = text.indexOf(" to ")
-        if (toIndex >= 0) {
+        if (recipient.isNullOrBlank() && toIndex >= 0) {
             val tail = text.substring(toIndex + 4).trim()
             val marker = bodyMarkers.firstOrNull { tail.contains(it) }
             if (marker != null) {
