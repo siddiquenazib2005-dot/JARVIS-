@@ -18,18 +18,6 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * Production-hardened AURIX AccessibilityService.
- *
- * Responsibilities (see hardening spec):
- *  - Robust lifecycle + observable [A11yServiceState] (phase 1).
- *  - Reliable [isAccessibilityServiceEnabled] + safe settings-intent (phase 2).
- *  - Serialized UI actions via [actionMutex] (phase 17).
- *  - Node resolution, validation, click/long-press/swipe/scroll/text engines (3–9).
- *  - Centralized wait/retry engine (10) and before/after verification (11).
- *  - Structured [A11yResult] for every action (13) + risk logging (14).
- *  - Privacy-aware logging (16); display-metric-aware coordinates (18).
- *  - id-based tap (19) — for third-party apps (e.g. WhatsApp) whose send/action
- *    buttons don't reliably expose stable text/content-description, but do
- *    expose a stable resource id across app updates.
  */
 class JarvisAccessibilityService : AccessibilityService() {
 
@@ -53,26 +41,49 @@ class JarvisAccessibilityService : AccessibilityService() {
         fun isConnected(): Boolean =
             instance?.stateFlow?.value == A11yServiceState.AVAILABLE
 
-        /** True when the user has enabled AURIX Accessibility in system settings. */
-        fun isAccessibilityServiceEnabled(context: Context): Boolean {
-            val expected = ComponentName(context, JarvisAccessibilityService::class.java)
-            val enabled = Settings.Secure.getString(
+        private fun expectedComponent(context: Context): ComponentName =
+            ComponentName(context.packageName, JarvisAccessibilityService::class.java.name)
+
+        private fun enabledAccessibilityEntries(context: Context): List<String> =
+            Settings.Secure.getString(
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            ) ?: return false
-            return enabled.split(":").any { it.equals("$expected", ignoreCase = true) }
+            ).orEmpty().split(':').map { it.trim() }.filter { it.isNotBlank() }
+
+        /** True when the user has enabled AURIX Accessibility in system settings. */
+        fun isAccessibilityServiceEnabled(context: Context): Boolean {
+            val app = context.applicationContext
+            val expected = expectedComponent(app)
+            val expectedFlat = expected.flattenToString()
+            val expectedShort = expected.flattenToShortString()
+            val serviceClass = JarvisAccessibilityService::class.java.name
+            return enabledAccessibilityEntries(app).any { raw ->
+                raw.equals(expectedFlat, ignoreCase = true) ||
+                    raw.equals(expectedShort, ignoreCase = true) ||
+                    raw.endsWith("/$serviceClass", ignoreCase = true) ||
+                    raw.contains(serviceClass, ignoreCase = true)
+            }
         }
 
-        /**
-         * Best-effort snapshot of the active window's visible text, read from
-         * the accessibility tree (BFS, depth-bounded by [maxNodes]).
-         *
-         * Consent-free (the user already granted Accessibility) and available
-         * on every supported Android version — unlike MediaProjection
-         * screenshots, which on API 34+ additionally require a live
-         * mediaProjection foreground service. Returns an empty list when the
-         * service is not connected or the window tree is unavailable.
-         */
+        fun diagnosticsReport(context: Context): String {
+            val app = context.applicationContext
+            val expected = expectedComponent(app)
+            val enabledRaw = Settings.Secure.getString(
+                app.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ).orEmpty().ifBlank { "<empty>" }
+            val connected = isConnected()
+            val state = instance?.stateFlow?.value?.name ?: "NO_INSTANCE"
+            val enabled = isAccessibilityServiceEnabled(app)
+            return "AURIX Accessibility Report\n" +
+                "Package: ${app.packageName}\n" +
+                "Expected: ${expected.flattenToString()}\n" +
+                "Enabled in Android: $enabled\n" +
+                "Service connected: $connected\n" +
+                "Service state: $state\n" +
+                "Enabled raw: $enabledRaw"
+        }
+
         fun activeWindowText(maxNodes: Int = 400): List<String> {
             val service = instance
                 ?.takeIf { it.stateFlow.value == A11yServiceState.AVAILABLE }
@@ -98,19 +109,18 @@ class JarvisAccessibilityService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
-        runCatching {
-            super.onServiceConnected()
-            instance = this
-            stateFlow.value = A11yServiceState.CONNECTING
-            gestureEngine = GestureEngine(this)
-            screenReader = ScreenReader(this)
-            stateFlow.value = A11yServiceState.AVAILABLE
-            AccessibilityLogger.command("accessibility service connected")
-            com.jarvis.ai.diagnostics.DiagnosticsLog.record("accessibility", "connected")
-        }.onFailure { error ->
-            stateFlow.value = A11yServiceState.SUSPENDED
-            AccessibilityLogger.error("SERVICE_CONNECT_FAILED", AccessibilityLogger.redact(error.message))
-            com.jarvis.ai.diagnostics.CrashGuard.record(this, error)
+        super.onServiceConnected()
+        instance = this
+        stateFlow.value = A11yServiceState.AVAILABLE
+        AccessibilityLogger.command("accessibility service connected")
+        com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "connected")
+        runCatching { gestureEngine = GestureEngine(this) }.onFailure { error ->
+            AccessibilityLogger.error("GESTURE_INIT_FAILED", AccessibilityLogger.redact(error.message))
+            com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "gesture init failed: ${error.message ?: error::class.java.simpleName}")
+        }
+        runCatching { screenReader = ScreenReader(this) }.onFailure { error ->
+            AccessibilityLogger.error("SCREEN_READER_INIT_FAILED", AccessibilityLogger.redact(error.message))
+            com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "screen reader init failed: ${error.message ?: error::class.java.simpleName}")
         }
     }
 
@@ -130,34 +140,29 @@ class JarvisAccessibilityService : AccessibilityService() {
         runCatching {
             stateFlow.value = A11yServiceState.SUSPENDED
             AccessibilityLogger.error("SERVICE_INTERRUPTED", "service interrupted")
-            com.jarvis.ai.diagnostics.DiagnosticsLog.record("accessibility", "interrupted")
+            com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "interrupted")
         }
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
         stateFlow.value = A11yServiceState.DISCONNECTED
         instance = null
-        com.jarvis.ai.diagnostics.DiagnosticsLog.record("accessibility", "unbound")
+        com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "unbound")
         return runCatching { super.onUnbind(intent) }.getOrDefault(false)
     }
 
     override fun onDestroy() {
         stateFlow.value = A11yServiceState.DISCONNECTED
         instance = null
-        com.jarvis.ai.diagnostics.DiagnosticsLog.record("accessibility", "destroyed")
+        com.jarvis.ai.diagnostics.DiagnosticsLog.recordOnce("accessibility", "destroyed")
         runCatching { super.onDestroy() }
     }
 
-    /** Safe intent to open Android Accessibility Settings (phase 2). */
     fun accessibilitySettingsIntent(): Intent =
         Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     fun enableGuide(): String =
         "Enable AURIX in Settings → Accessibility → AURIX, then grant permission."
-
-    // ------------------------------------------------------------------
-    // Internal helpers
-    // ------------------------------------------------------------------
 
     private suspend fun getRoot(retries: Int = 3): AccessibilityNodeInfo? {
         repeat(retries) { attempt ->
@@ -190,10 +195,6 @@ class JarvisAccessibilityService : AccessibilityService() {
         AccessibilityLogger.command("action=$actionName risk=${RiskClassifier.classify(actionName)}")
         return actionMutex.withLock { block() }
     }
-
-    // ------------------------------------------------------------------
-    // App launching (phase 12)
-    // ------------------------------------------------------------------
 
     suspend fun openAppByPackage(packageName: String): A11yResult = serialized("open_app") {
         AccessibilityLogger.command("open_app:$packageName")
@@ -235,11 +236,6 @@ class JarvisAccessibilityService : AccessibilityService() {
         )
     }
 
-    /**
-     * Launches an arbitrary [Intent] (e.g. a wa.me deep-link) and waits for
-     * [expectedPackage] to come to the foreground. Used by higher-level senders
-     * (WhatsApp/SMS) that need a pre-filled screen rather than a bare app launch.
-     */
     suspend fun launchIntentAndVerify(intent: Intent, expectedPackage: String): A11yResult =
         serialized("launch_intent") {
             AccessibilityLogger.command("launch_intent:$expectedPackage")
@@ -261,16 +257,6 @@ class JarvisAccessibilityService : AccessibilityService() {
             }
         }
 
-    // ------------------------------------------------------------------
-    // App closing (fixed: previously CloseApp re-launched the app)
-    // ------------------------------------------------------------------
-
-    /**
-     * Closes an app by (1) bringing it out of the foreground via HOME if it is
-     * the focused window and (2) killing its background processes through
-     * [ActivityManager.killBackgroundProcesses]. Requires
-     * `android.permission.KILL_BACKGROUND_PROCESSES`.
-     */
     suspend fun closeAppByPackage(packageName: String): A11yResult = serialized("close_app") {
         AccessibilityLogger.command("close_app:$packageName")
         if (!isAccessibilityServiceEnabled(this@JarvisAccessibilityService)) {
@@ -286,7 +272,6 @@ class JarvisAccessibilityService : AccessibilityService() {
                 message = "No launchable activity for $packageName"
             )
         }
-        // Step out of the app first so killBackgroundProcesses can act on it.
         if (isAppForeground(packageName)) {
             performGlobalAction(GLOBAL_ACTION_HOME)
             delay(200)
@@ -301,10 +286,6 @@ class JarvisAccessibilityService : AccessibilityService() {
             verificationStatus = if (!nowForeground) VerificationStatus.VERIFIED else VerificationStatus.NOT_CHECKED
         )
     }
-
-    // ------------------------------------------------------------------
-    // Click engine (phase 5)
-    // ------------------------------------------------------------------
 
     suspend fun tapByText(text: String): A11yResult = serialized("tap") {
         AccessibilityLogger.action("tap", text)
@@ -331,24 +312,15 @@ class JarvisAccessibilityService : AccessibilityService() {
                     )
                 }
                 val ok = performClick(node)
-                val success = if (ok) true else performClick(node) // one retry
-                if (success) {
-                    A11yResult.success(action = "tap", target = text, attempts = 1,
-                        verificationStatus = VerificationStatus.NOT_CHECKED)
-                } else {
-                    A11yResult.failure(A11yErrorCode.GESTURE_FAILED, action = "tap", target = text,
-                        message = "Tap rejected on \"$text\"", retryable = true)
-                }
+                val success = if (ok) true else performClick(node)
+                if (success) A11yResult.success(action = "tap", target = text, attempts = 1,
+                    verificationStatus = VerificationStatus.NOT_CHECKED)
+                else A11yResult.failure(A11yErrorCode.GESTURE_FAILED, action = "tap", target = text,
+                    message = "Tap rejected on \"$text\"", retryable = true)
             }
         }
     }
 
-    /**
-     * Taps a node identified by its stable resource id, e.g.
-     * "com.whatsapp:id/send". More reliable than [tapByText] for third-party
-     * app buttons whose visible text/content-description changes across
-     * locales or app updates, but whose id tends to stay stable.
-     */
     suspend fun tapById(viewId: String): A11yResult = serialized("tap_by_id") {
         AccessibilityLogger.action("tap_by_id", viewId)
         val root = getRoot() ?: return@serialized hierarchyUnavailable("tap_by_id", viewId)
@@ -364,14 +336,11 @@ class JarvisAccessibilityService : AccessibilityService() {
             )
         }
         val ok = performClick(node)
-        val success = if (ok) true else performClick(node) // one retry
-        if (success) {
-            A11yResult.success(action = "tap_by_id", target = viewId, attempts = 1,
-                verificationStatus = VerificationStatus.NOT_CHECKED)
-        } else {
-            A11yResult.failure(A11yErrorCode.GESTURE_FAILED, action = "tap_by_id", target = viewId,
-                message = "Tap rejected on id \"$viewId\"", retryable = true)
-        }
+        val success = if (ok) true else performClick(node)
+        if (success) A11yResult.success(action = "tap_by_id", target = viewId, attempts = 1,
+            verificationStatus = VerificationStatus.NOT_CHECKED)
+        else A11yResult.failure(A11yErrorCode.GESTURE_FAILED, action = "tap_by_id", target = viewId,
+            message = "Tap rejected on id \"$viewId\"", retryable = true)
     }
 
     private fun performClick(node: AccessibilityNodeInfo): Boolean =
@@ -391,10 +360,6 @@ class JarvisAccessibilityService : AccessibilityService() {
             target = "$x,$y", message = "Tap gesture rejected", retryable = true)
     }
 
-    // ------------------------------------------------------------------
-    // Long press (phase 6)
-    // ------------------------------------------------------------------
-
     suspend fun longPressByText(text: String, durationMs: Long = 600): A11yResult = serialized("long_press") {
         AccessibilityLogger.action("long_press", text)
         val root = getRoot() ?: return@serialized hierarchyUnavailable("long_press", text)
@@ -412,10 +377,6 @@ class JarvisAccessibilityService : AccessibilityService() {
         else A11yResult.failure(A11yErrorCode.GESTURE_FAILED, action = "long_press", target = text,
             message = "Long-press rejected on \"$text\"", retryable = true)
     }
-
-    // ------------------------------------------------------------------
-    // Text input (phase 9)
-    // ------------------------------------------------------------------
 
     suspend fun typeText(value: String, clearFirst: Boolean = true): A11yResult =
         typeInto(value, fieldTarget = null, clearFirst = clearFirst)
@@ -439,7 +400,6 @@ class JarvisAccessibilityService : AccessibilityService() {
                 return@serialized A11yResult.failure(A11yErrorCode.INPUT_FAILED, action = "type",
                     target = fieldTarget ?: "", message = "Failed to set text", retryable = true)
             }
-            // Best-effort verification of resulting text.
             val resulting = runCatching { engine.getText(field) }.getOrDefault("")
             val verified = resulting.contains(value.take(40), ignoreCase = true)
             A11yResult.success(
@@ -448,10 +408,6 @@ class JarvisAccessibilityService : AccessibilityService() {
                 verificationStatus = if (verified) VerificationStatus.VERIFIED else VerificationStatus.NOT_CHECKED
             )
         }
-
-    // ------------------------------------------------------------------
-    // Global navigation (phase 5 low-risk)
-    // ------------------------------------------------------------------
 
     fun pressBack(): A11yResult =
         if (performGlobalAction(GLOBAL_ACTION_BACK)) A11yResult.success("press_back")
@@ -466,15 +422,10 @@ class JarvisAccessibilityService : AccessibilityService() {
         else A11yResult.failure(A11yErrorCode.GESTURE_FAILED, action = "press_recents", message = "Recents rejected")
 
     fun lockScreen(): A11yResult =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
-            performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
-        ) A11yResult.success("lock_screen")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN))
+            A11yResult.success("lock_screen")
         else A11yResult.failure(A11yErrorCode.GESTURE_FAILED, action = "lock_screen",
             message = "Lock-screen action unavailable")
-
-    // ------------------------------------------------------------------
-    // Swipe (phase 7)
-    // ------------------------------------------------------------------
 
     suspend fun swipe(direction: String, distance: String = "medium"): A11yResult = serialized("swipe") {
         AccessibilityLogger.action("swipe", direction)
@@ -484,10 +435,6 @@ class JarvisAccessibilityService : AccessibilityService() {
         else A11yResult.failure(A11yErrorCode.GESTURE_FAILED, action = "swipe", target = direction,
             message = "Swipe rejected: $direction", retryable = true)
     }
-
-    // ------------------------------------------------------------------
-    // Scroll (phase 8)
-    // ------------------------------------------------------------------
 
     suspend fun performScroll(down: Boolean = true): A11yResult = serialized("scroll") { performScrollInternal(down) }
 
@@ -507,12 +454,11 @@ class JarvisAccessibilityService : AccessibilityService() {
         else A11yResult.failure(A11yErrorCode.GESTURE_FAILED, action = "scroll", message = "Scroll rejected")
     }
 
-    /** Scroll until [text] appears, with max-scroll + duplicate-screen detection (no infinite loop). */
     suspend fun scrollUntilText(text: String, maxScrolls: Int = 12, down: Boolean = true): A11yResult =
         serialized("scroll_until_text") {
             AccessibilityLogger.action("scroll_until_text", text)
             var lastSignature = ""
-            repeat(maxScrolls) { i ->
+            repeat(maxScrolls) {
                 if (screenReader.extractAllText().contains(text, ignoreCase = true)) {
                     return@serialized A11yResult.success(action = "scroll_until_text", target = text,
                         verificationStatus = VerificationStatus.VERIFIED)
@@ -524,18 +470,12 @@ class JarvisAccessibilityService : AccessibilityService() {
                 }
                 lastSignature = sig
                 val scrollRes = performScrollInternal(down)
-                if (scrollRes.isFailure) {
-                    return@serialized scrollRes.copy(action = "scroll_until_text", target = text)
-                }
+                if (scrollRes.isFailure) return@serialized scrollRes.copy(action = "scroll_until_text", target = text)
                 delay(250)
             }
             A11yResult.failure(A11yErrorCode.TIMEOUT, action = "scroll_until_text", target = text,
                 message = "Scrolled $maxScrolls times; '$text' not found", retryable = false)
         }
-
-    // ------------------------------------------------------------------
-    // Wait / retry engine (phase 10)
-    // ------------------------------------------------------------------
 
     suspend fun waitForText(text: String, timeoutMs: Long = 5000): A11yResult {
         AccessibilityLogger.action("wait_for_text", text)
@@ -562,7 +502,6 @@ class JarvisAccessibilityService : AccessibilityService() {
         return engine.waitForPackage(packageName, timeoutMs)
     }
 
-    /** Waits until an element with resource id [viewId] appears (used after launchIntentAndVerify). */
     suspend fun waitForId(viewId: String, timeoutMs: Long = 5000): A11yResult {
         AccessibilityLogger.action("wait_for_id", viewId)
         val deadline = System.currentTimeMillis() + timeoutMs
@@ -578,15 +517,7 @@ class JarvisAccessibilityService : AccessibilityService() {
             message = "Element with id \"$viewId\" did not appear in time", retryable = true)
     }
 
-    // ------------------------------------------------------------------
-    // Screen reader access
-    // ------------------------------------------------------------------
-
     fun reader(): ScreenReader = screenReader
-
-    // ------------------------------------------------------------------
-    // Small utilities
-    // ------------------------------------------------------------------
 
     private fun hierarchyUnavailable(action: String, target: String) = A11yResult.failure(
         A11yErrorCode.HIERARCHY_UNAVAILABLE, action = action, target = target,
