@@ -71,8 +71,17 @@ object DiagnosticsLog {
 
     @Synchronized
     fun record(source: String, message: String) {
-        entries.addLast(Entry(System.currentTimeMillis(), source, message.take(240)))
+        val clean = message.replace(Regex("\\s+"), " ").take(240)
+        entries.addLast(Entry(System.currentTimeMillis(), source, clean))
         while (entries.size > CAP) entries.removeFirst()
+    }
+
+    @Synchronized
+    fun recordOnce(source: String, message: String) {
+        val clean = message.replace(Regex("\\s+"), " ").take(240)
+        val now = System.currentTimeMillis()
+        val duplicate = entries.any { it.source == source && it.message == clean && now - it.atMs < 60_000L }
+        if (!duplicate) record(source, clean)
     }
 
     @Synchronized
@@ -268,7 +277,7 @@ object HealthAgent : DiagnosticAgent {
         val runtime = JarvisRuntime.get(context)
         val findings = mutableListOf<Finding>()
 
-        val recentFailures = DiagnosticsLog.countSince(System.currentTimeMillis() - WINDOW_MS)
+        val recentFailures = DiagnosticsLog.recent(20).distinctBy { it.source + ":" + it.message }.size
         findings += when {
             recentFailures == 0 -> Finding(name, Severity.OK, "No recent faults", "Clean for 10 minutes.")
             recentFailures < 3 -> Finding(
@@ -356,7 +365,7 @@ object SelfCheck {
     fun runAtStartup(context: Context) {
         runCatching {
             run(context).failures.forEach {
-                DiagnosticsLog.record("startup", "${it.title}: ${it.detail}")
+                DiagnosticsLog.recordOnce("startup", "${it.title}: ${it.detail}")
             }
         }
     }
