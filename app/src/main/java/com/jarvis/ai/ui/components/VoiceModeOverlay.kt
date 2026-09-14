@@ -23,14 +23,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
-/**
- * Full-screen VOICE MODE. Hosts the existing [JarvisOrb] as the hero element
- * with explicit state captions. Only mounted while voice mode is active so
- * the orb animations never run behind the normal chat (performance rule).
- */
+/** Full-screen, animated and audio-reactive AURIX voice mode. */
 @Composable
 fun VoiceModeOverlay(
     visible: Boolean,
@@ -44,6 +42,8 @@ fun VoiceModeOverlay(
     onExit: () -> Unit
 ) {
     if (!visible) return
+    val haptic = LocalHapticFeedback.current
+
     Box(
         Modifier
             .fillMaxSize()
@@ -51,23 +51,19 @@ fun VoiceModeOverlay(
     ) {
         IconButton(
             onClick = onExit,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(6.dp)
+            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(6.dp)
         ) {
             Icon(Icons.Outlined.Close, contentDescription = "Exit voice mode")
         }
 
         Column(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.align(Alignment.Center).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             JarvisOrb(
                 size = 260.dp,
-                active = isListening || isSpeaking,
+                active = isListening || isSpeaking || isThinking,
                 level = orbLevel
             )
             Spacer(Modifier.height(28.dp))
@@ -104,32 +100,23 @@ fun VoiceModeOverlay(
             }
         }
 
-        // Mic toggle: tap again to interrupt TTS and re-enter LISTENING (barge-in).
         Box(
             Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
                 .padding(bottom = 36.dp)
                 .size(72.dp)
-                .background(
-                    if (isListening) Color(0xFFB23A48) else Color(0xFF223047),
-                    CircleShape
-                )
-                .let { m ->
-                    with(androidx.compose.ui.platform.LocalHapticFeedback.current) { m }
-                }
-                .clickableHaptic(onMicToggle),
+                .background(if (isListening) Color(0xFFFF1744) else Color(0xFF34252A), CircleShape)
+                .clickableHaptic {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onMicToggle()
+                },
             contentAlignment = Alignment.Center
         ) {
-            Box(
-                Modifier
-                    .size(20.dp)
-                    .background(Color.White, CircleShape)
-            )
+            Box(Modifier.size(20.dp).background(Color.White, CircleShape))
         }
     }
 }
 
-private fun Modifier.clickableHaptic(onTap: () -> Unit): Modifier = this.then(
-    Modifier
-)
+private fun Modifier.clickableHaptic(onTap: () -> Unit): Modifier =
+    this.then(androidx.compose.foundation.clickable(onClick = onTap))
