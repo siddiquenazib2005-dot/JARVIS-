@@ -29,8 +29,8 @@ import com.jarvis.ai.diagnostics.CrashGuard
 import com.jarvis.ai.diagnostics.StartupTracker
 import com.jarvis.ai.onboarding.OnboardingPrefs
 import com.jarvis.ai.service.WakeWordService
-import com.jarvis.ai.ui.screens.AurixHomeScreen
 import com.jarvis.ai.ui.screens.ChatScreen
+import com.jarvis.ai.ui.screens.MissionAwareHomeScreen
 import com.jarvis.ai.ui.screens.OnboardingScreen
 import com.jarvis.ai.ui.theme.JarvisTheme
 import com.jarvis.ai.viewmodel.JarvisViewModel
@@ -111,9 +111,6 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                // Both cold-start and singleTop wake intents enter the exact same
-                // ViewModel pipeline as typed commands. The value is consumed once
-                // so recomposition or rotation can never execute it twice.
                 LaunchedEffect(wakeCommand, ready, showOnboarding) {
                     val command = wakeCommand
                     if (ready && !showOnboarding && !command.isNullOrBlank()) {
@@ -142,7 +139,7 @@ class MainActivity : ComponentActivity() {
                     }
                     showOnboarding -> OnboardingScreen(onFinished = { showOnboarding = false })
                     destination == "chat" -> ChatScreen(viewModel = jarvisViewModel)
-                    else -> AurixHomeScreen(
+                    else -> MissionAwareHomeScreen(
                         viewModel = jarvisViewModel,
                         onOpenChat = { destination = "chat" },
                         onCommand = { command ->
