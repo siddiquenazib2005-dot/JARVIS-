@@ -1,6 +1,8 @@
 package com.jarvis.ai
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -22,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarvis.ai.core.JarvisRuntime
@@ -40,8 +43,8 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
-    /** Commands arriving while an existing singleTop activity is already alive. */
     private val pendingWakeCommand = MutableStateFlow<String?>(null)
+    private val pendingVoiceMode = MutableStateFlow(false)
 
     private fun setRuntimeForeground(foreground: Boolean) {
         lifecycleScope.launch(Dispatchers.Default) {
@@ -50,13 +53,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun acceptWakeIntent(source: Intent?) {
+    private fun acceptAssistantIntent(source: Intent?) {
         val command = source
             ?.getStringExtra(WakeWordService.EXTRA_WAKE_COMMAND)
             ?.trim()
             .orEmpty()
         if (command.isNotBlank()) pendingWakeCommand.value = command
+        if (source?.getBooleanExtra(EXTRA_OPEN_VOICE_MODE, false) == true) {
+            pendingVoiceMode.value = true
+        }
         source?.removeExtra(WakeWordService.EXTRA_WAKE_COMMAND)
+        source?.removeExtra(EXTRA_OPEN_VOICE_MODE)
     }
 
     override fun onStart() {
@@ -72,7 +79,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        acceptWakeIntent(intent)
+        acceptAssistantIntent(intent)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,7 +88,7 @@ class MainActivity : ComponentActivity() {
         StartupTracker.stage(applicationContext, "ACTIVITY_CREATED", "MainActivity.onCreate entered")
 
         super.onCreate(savedInstanceState)
-        acceptWakeIntent(intent)
+        acceptAssistantIntent(intent)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -96,6 +103,7 @@ class MainActivity : ComponentActivity() {
                 var showOnboarding by rememberSaveable { mutableStateOf(false) }
                 var destination by rememberSaveable { mutableStateOf("home") }
                 val wakeCommand by pendingWakeCommand.collectAsState()
+                val openVoiceMode by pendingVoiceMode.collectAsState()
                 val jarvisViewModel: JarvisViewModel = viewModel(
                     factory = JarvisViewModel.factory(applicationContext)
                 )
@@ -117,6 +125,20 @@ class MainActivity : ComponentActivity() {
                         pendingWakeCommand.value = null
                         jarvisViewModel.send(command)
                         destination = "chat"
+                    }
+                }
+
+                LaunchedEffect(openVoiceMode, ready, showOnboarding) {
+                    if (openVoiceMode && ready && !showOnboarding) {
+                        pendingVoiceMode.value = false
+                        destination = "home"
+                        if (ContextCompat.checkSelfPermission(
+                                applicationContext,
+                                Manifest.permission.RECORD_AUDIO
+                            ) == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            jarvisViewModel.toggleHandsFreeMode()
+                        }
                     }
                 }
 
@@ -150,5 +172,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    companion object {
+        const val EXTRA_OPEN_VOICE_MODE = "com.jarvis.ai.extra.OPEN_VOICE_MODE"
     }
 }

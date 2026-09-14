@@ -1,6 +1,7 @@
 package com.jarvis.ai.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -107,7 +108,7 @@ fun VoiceModeOverlay(
                 .padding(bottom = 36.dp)
                 .size(72.dp)
                 .background(if (isListening) Color(0xFFFF1744) else Color(0xFF34252A), CircleShape)
-                .clickableHaptic {
+                .clickable {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onMicToggle()
                 },
@@ -117,6 +118,3 @@ fun VoiceModeOverlay(
         }
     }
 }
-
-private fun Modifier.clickableHaptic(onTap: () -> Unit): Modifier =
-    this.then(androidx.compose.foundation.clickable(onClick = onTap))
