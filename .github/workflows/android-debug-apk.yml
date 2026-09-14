@@ -1,4 +1,4 @@
-name: Build AURIX Debug APK
+name: Build and Test AURIX Debug APK
 
 on:
   push:
@@ -7,8 +7,9 @@ on:
 
 jobs:
   build:
-    name: Build debug APK
+    name: Unit tests and debug APK
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -26,19 +27,18 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
+      - name: Run unit tests and build debug APK
         run: |
           set -o pipefail
-          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build-output.log
+          gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build-output.log
 
-      # The Gradle stack trace is useless noise; the only lines that matter are
-      # the Kotlin compiler's "e:" lines. This step surfaces them on their own
-      # so a failed build is readable at a glance instead of scrolled for.
       - name: Kotlin compiler errors only
         if: failure()
         run: |
           echo "=============== KOTLIN ERRORS ==============="
           grep -E "^e: |^e:" build-output.log | sed 's|file:///home/runner/work/[^/]*/[^/]*/||' || echo "(no e: lines - failure was not a Kotlin compile error)"
+          echo "=============== TEST FAILURES ==============="
+          grep -E "FAILED|There were failing tests|AssertionError" build-output.log | tail -60 || true
           echo "=============== WARNINGS (last 20) ==============="
           grep -E "^w: " build-output.log | sed 's|file:///home/runner/work/[^/]*/[^/]*/||' | tail -20 || true
 
@@ -48,6 +48,16 @@ jobs:
         with:
           name: AURIX-build-log
           path: build-output.log
+          if-no-files-found: ignore
+
+      - name: Upload unit-test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AURIX-unit-test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
           if-no-files-found: ignore
 
       - name: Upload APK artifact
