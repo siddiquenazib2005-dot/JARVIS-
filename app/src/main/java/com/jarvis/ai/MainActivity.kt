@@ -32,9 +32,9 @@ import com.jarvis.ai.diagnostics.CrashGuard
 import com.jarvis.ai.diagnostics.StartupTracker
 import com.jarvis.ai.onboarding.OnboardingPrefs
 import com.jarvis.ai.service.WakeWordService
-import com.jarvis.ai.ui.screens.ChatScreen
 import com.jarvis.ai.ui.screens.MissionAwareHomeScreen
 import com.jarvis.ai.ui.screens.OnboardingScreen
+import com.jarvis.ai.ui.screens.VoiceAwareChatScreen
 import com.jarvis.ai.ui.theme.JarvisTheme
 import com.jarvis.ai.viewmodel.JarvisViewModel
 import kotlinx.coroutines.Dispatchers
@@ -131,11 +131,12 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(openVoiceMode, ready, showOnboarding) {
                     if (openVoiceMode && ready && !showOnboarding) {
                         pendingVoiceMode.value = false
-                        destination = "home"
+                        destination = "chat"
                         if (ContextCompat.checkSelfPermission(
                                 applicationContext,
                                 Manifest.permission.RECORD_AUDIO
-                            ) == PackageManager.PERMISSION_GRANTED
+                            ) == PackageManager.PERMISSION_GRANTED &&
+                            !jarvisViewModel.handsFreeActive.value
                         ) {
                             jarvisViewModel.toggleHandsFreeMode()
                         }
@@ -143,7 +144,11 @@ class MainActivity : ComponentActivity() {
                 }
 
                 BackHandler(enabled = ready && !showOnboarding && destination == "chat") {
-                    destination = "home"
+                    if (jarvisViewModel.handsFreeActive.value) {
+                        jarvisViewModel.toggleHandsFreeMode()
+                    } else {
+                        destination = "home"
+                    }
                 }
 
                 when {
@@ -160,7 +165,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     showOnboarding -> OnboardingScreen(onFinished = { showOnboarding = false })
-                    destination == "chat" -> ChatScreen(viewModel = jarvisViewModel)
+                    destination == "chat" -> VoiceAwareChatScreen(viewModel = jarvisViewModel)
                     else -> MissionAwareHomeScreen(
                         viewModel = jarvisViewModel,
                         onOpenChat = { destination = "chat" },
