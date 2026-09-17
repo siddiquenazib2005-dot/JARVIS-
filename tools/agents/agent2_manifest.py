@@ -9,7 +9,17 @@ v1 false positives fixed:
 """
 import os, re, sys, xml.etree.ElementTree as ET
 
-APP = "/data/AURIX-Android-AI/app"
+# Resolve the app tree from this script's own location so the agent works from
+# any checkout (CI included); override with APP=/path if the layout differs.
+APP = os.environ.get(
+    "APP",
+    os.path.normpath(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "..", "app",
+        )
+    ),
+)
 MANIFEST = f"{APP}/src/main/AndroidManifest.xml"
 SRC = f"{APP}/src/main/java"
 NS = "{http://schemas.android.com/apk/res/android}"

@@ -65,14 +65,20 @@ class ToolExecutor(private val context: Context) {
         val gate = com.jarvis.ai.security.PermissionGate.decide(toolName, userConfirmedThisTurn)
         com.jarvis.ai.security.AuditLog.record(toolName, gate, parameters.toString())
         return when {
+            // Confirmation is checked BEFORE denial: a HIGH_RISK tool that has not
+            // been confirmed yet sets BOTH flags, and checking `denied` first would
+            // hard-fail it with no way to ever confirm — making the gate's own
+            // "user explicitly confirmed high-risk action" branch unreachable.
+            // Nothing executes here without confirmation either way; this only
+            // decides whether the user is asked or told.
+            gate.requiresConfirmation -> ToolResult.ConfirmationRequired(
+                toolName = toolName,
+                message = gate.message
+            )
             gate.denied -> ToolResult.Failure(
                 toolName = toolName,
                 error = gate.message,
                 recoverable = false
-            )
-            gate.requiresConfirmation -> ToolResult.ConfirmationRequired(
-                toolName = toolName,
-                message = gate.message
             )
             !validateParameters(toolName, parameters) -> ToolResult.Failure(
                 toolName = toolName,

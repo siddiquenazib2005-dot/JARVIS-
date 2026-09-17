@@ -753,6 +753,10 @@ class JarvisViewModel(
             val replyId = newReplyId()
             var started = false
             val fullText = StringBuilder()
+            // Raw delta stream (unbatched). fullText is sentence-batched for display,
+            // but a provider failover rewinds in exact DELTA characters, so the raw
+            // stream is tracked separately to keep that arithmetic exact.
+            val rawText = StringBuilder()
             startedAtForReply = System.nanoTime()
             try {
                 orchestrator.processRequest(
@@ -762,6 +766,7 @@ class JarvisViewModel(
                 ).collect { update ->
                     when (update) {
                         is OrchestratorUpdate.Delta -> {
+                            rawText.append(update.text)
                             sentenceParser.addChunk(update.text)
                             val sentence = sentenceParser.nextSentence()
                             if (sentence?.isNotBlank() == true) {
@@ -782,6 +787,31 @@ class JarvisViewModel(
                             } else {
                                 updateReply(replyId, fullText.toString().trim())
                             }
+                        }
+
+                        is OrchestratorUpdate.Rewind -> {
+                            // A provider died mid-stream after leaking a partial
+                            // reply. Drop exactly the leaked prefix from the raw
+                            // stream and rebuild the bubble from what survived, so
+                            // the failover's reply is not stitched onto dead text.
+                            // (Nothing commits until an attempt succeeds, so in
+                            // practice nothing survives a rewind today.)
+                            val keep = (rawText.length - update.discardChars).coerceAtLeast(0)
+                            rawText.setLength(keep)
+                            sentenceParser.clear()
+                            fullText.setLength(0)
+                            val survivor = rawText.toString()
+                            if (survivor.isNotEmpty()) {
+                                sentenceParser.addChunk(survivor)
+                                while (true) {
+                                    val s = sentenceParser.nextSentence() ?: break
+                                    if (s.isNotBlank()) fullText.append(s).append(" ")
+                                }
+                            }
+                            // A queued-but-unspoken sentence from the failed attempt
+                            // must not be voiced as if it were this reply's text.
+                            ttsQueue.value = null
+                            if (started) updateReply(replyId, fullText.toString().trim())
                         }
 
                         is OrchestratorUpdate.Confirmation -> {

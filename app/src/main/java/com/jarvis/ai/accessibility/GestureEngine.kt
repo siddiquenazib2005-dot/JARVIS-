@@ -19,7 +19,6 @@ import kotlin.coroutines.resume
 class GestureEngine(private val service: AccessibilityService) {
 
     private val handler = Handler(Looper.getMainLooper())
-
     fun inBounds(x: Int, y: Int): Boolean {
         val m = service.resources.displayMetrics
         return x in 0..m.widthPixels && y in 0..m.heightPixels
@@ -59,8 +58,8 @@ class GestureEngine(private val service: AccessibilityService) {
     }
 
     private suspend fun dispatch(gesture: GestureDescription): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            withTimeout(2000) {
+        try {
+            withTimeout(GESTURE_TIMEOUT_MS) {
                 suspendCancellableCoroutine { cont ->
                     handler.post {
                         val ok = try {
@@ -85,6 +84,21 @@ class GestureEngine(private val service: AccessibilityService) {
                     cont.invokeOnCancellation { /* gesture already dispatched; ignore */ }
                 }
             }
-        }.getOrDefault(false)
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            // The 2s gesture budget expired — a bounded failure, reported as such.
+            false
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            // The caller cancelled (stopGeneration / AgentCore.cancelTask). The old
+            // runCatching{}.getOrDefault(false) swallowed this and reported a failed
+            // gesture, letting the device-control loop run one action too many.
+            throw ce
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    companion object {
+        /** Bounded gesture budget so a missing framework callback can never hang. */
+        private const val GESTURE_TIMEOUT_MS = 2000L
     }
 }

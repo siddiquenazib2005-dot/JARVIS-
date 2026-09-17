@@ -21,6 +21,7 @@
 
 import express from 'express'
 import cors from 'cors'
+import crypto from 'crypto'
 import { PROVIDERS, configuredProviders, keysFor } from './providers.js'
 import { complete, healthSnapshot, probe, candidates } from './router.js'
 import {
@@ -61,10 +62,21 @@ app.use('/v1', (req, res, next) => {
 	next()
 })
 
+/**
+ * Constant-time string comparison. A plain `===` on the bearer token leaks its
+ * length/prefix through timing; timingSafeEqual needs equal-length buffers, so
+ * the length check is done first (token length is not itself secret here).
+ */
+function safeCompare(a, b) {
+	const aBuf = Buffer.from(a, 'utf-8')
+	const bBuf = Buffer.from(b, 'utf-8')
+	return aBuf.length === bBuf.length && crypto.timingSafeEqual(aBuf, bBuf)
+}
+
 app.use('/v1', (req, res, next) => {
 	if (!APP_TOKEN) return next()
 	const header = req.headers.authorization || ''
-	if (header === 'Bearer ' + APP_TOKEN) return next()
+	if (safeCompare(header, 'Bearer ' + APP_TOKEN)) return next()
 	return res.status(401).json({ error: { message: 'Invalid app token' } })
 })
 

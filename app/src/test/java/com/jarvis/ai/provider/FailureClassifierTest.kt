@@ -32,6 +32,20 @@ class FailureClassifierTest {
     }
 
     @Test
+    fun `unmapped http status falls through to the message`() {
+        // 404 has no category of its own; the message must still be inspected
+        // rather than the old early-return yielding UNKNOWN and the wrong backoff.
+        assertEquals(
+            FailureCategory.AUTH,
+            FailureClassifier.classify("HTTP 404: invalid api key", httpStatus = 404)
+        )
+        assertEquals(
+            FailureCategory.UNKNOWN,
+            FailureClassifier.classify("something odd", httpStatus = 400)
+        )
+    }
+
+    @Test
     fun `dns and refused map to network`() {
         assertEquals(
             FailureCategory.NETWORK,

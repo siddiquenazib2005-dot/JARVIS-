@@ -77,11 +77,10 @@ class JarvisApiClient(
         isLenient = true
     }
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(180, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .build()
+    // Process-wide: JarvisApiClient is rebuilt per chat turn (see JarvisRepository),
+    // so an instance-level client would churn a fresh connection pool + dispatcher
+    // on every request. Sharing one keeps keep-alives warm and memory flat.
+    private val client: OkHttpClient get() = SHARED_CLIENT
 
     fun streamChat(
         history: List<Message>,
@@ -217,5 +216,11 @@ class JarvisApiClient(
 
     companion object {
         private const val JSON_MEDIA_TYPE = "application/json"
+
+        private val SHARED_CLIENT: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(180, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .build()
     }
 }

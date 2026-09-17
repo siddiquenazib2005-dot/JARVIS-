@@ -17,6 +17,7 @@ import com.jarvis.ai.provider.RouteChunk
 import com.jarvis.ai.vision.VisionModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -37,6 +38,34 @@ class AgentCore(
     private var workingMemory = TaskWorkingMemory()
     private val scope = CoroutineScope(Dispatchers.IO)
     private val taskMutex = Mutex()
+
+    /**
+     * The currently running automation job, if any.
+     *
+     * [executeTask] launches on [scope] and does not block, so a caller that stops
+     * waiting (timeout, user cancel) must be able to stop the work too — otherwise
+     * the agent keeps performing screen actions after the UI has already told the
+     * user it gave up. See [cancelTask].
+     */
+    @Volatile
+    private var activeTask: Job? = null
+
+    /**
+     * Cancels any in-flight automation.
+     *
+     * Idempotent and safe to call when nothing is running: a completed job is not
+     * [Job.isActive], and a terminal [AgentState] is only overwritten when a run is
+     * actually interrupted. The cancelled coroutine observes CancellationException
+     * at its next suspension point and lands in [AgentState.Done]("cancelled").
+     */
+    fun cancelTask() {
+        val task = activeTask
+        if (task?.isActive == true) {
+            _state.value = AgentState.Done("cancelled")
+            task.cancel()
+        }
+        activeTask = null
+    }
 
     private fun getScreenReader(): ScreenReader {
         return screenReader ?: run {
@@ -123,13 +152,21 @@ class AgentCore(
 
     fun executeTask(cleanCommand: String) {
         workingMemory = TaskWorkingMemory()
-        
-        scope.launch {
+
+        // A new command supersedes any automation still in flight; without this a
+        // queued/running task could keep driving the screen after cancelTask().
+        cancelTask()
+
+        // Publish Running synchronously (not inside the coroutine) so a collector
+        // can never observe a stale terminal state from a previous task in the
+        // window before the dispatched coroutine runs.
+        _state.value = AgentState.Running("analyzing task...")
+
+        activeTask = scope.launch {
             taskMutex.withLock {
                 var shouldReturn = false
                 
                 try {
-                    _state.value = AgentState.Running("analyzing task...")
                 
                     val plan = taskRouter.analyze(cleanCommand)
                     
@@ -168,6 +205,7 @@ class AgentCore(
                     ).fold("") { acc, chunk ->
                         when (chunk) {
                             is RouteChunk.Delta -> acc + chunk.text
+                            is RouteChunk.Rewind -> acc.dropLast(minOf(chunk.discardChars, acc.length))
                             is RouteChunk.Finished -> acc
                         }
                     }
@@ -198,6 +236,7 @@ class AgentCore(
                             ).fold("") { acc, chunk ->
                                 when (chunk) {
                                     is RouteChunk.Delta -> acc + chunk.text
+                                    is RouteChunk.Rewind -> acc.dropLast(minOf(chunk.discardChars, acc.length))
                                     is RouteChunk.Finished -> acc
                                 }
                             }
@@ -215,6 +254,11 @@ class AgentCore(
                     
                     val latency = System.currentTimeMillis() - startTime
                     _state.value = AgentState.Done("done in ${latency}ms")
+                } catch (ce: kotlinx.coroutines.CancellationException) {
+                    // [cancelTask] already published the terminal state; rethrow so
+                    // structured concurrency is preserved and the coroutine completes
+                    // as cancelled rather than being misreported as an error.
+                    throw ce
                 } catch (e: Exception) {
                     _state.value = AgentState.Error(e.message ?: "Unknown error")
                 }
@@ -609,7 +653,11 @@ object ActionJsonParser {
                     ))
                     Action.WAIT_FOR -> actions.add(Action.WaitFor(
                         obj.optString("text"),
-                        obj.optInt("timeoutMs", 5000)
+                        // The action schema documents "timeout_ms" (snake_case),
+                        // so that form wins; accept the camelCase spelling too so
+                        // an older prompt/catalog variant still parses instead of
+                        // silently falling back to the default.
+                        obj.optInt("timeout_ms", obj.optInt("timeoutMs", 5000))
                     ))
                     Action.LONG_PRESS -> actions.add(Action.LongPress(obj.optString("text")))
                     Action.LOCK_SCREEN -> actions.add(Action.LockScreen)

@@ -41,6 +41,13 @@ sealed class OrchestratorUpdate {
     /** Incremental reply text (deltas may be whole replies for local intents). */
     data class Delta(val text: String) : OrchestratorUpdate()
 
+    /**
+     * A provider failed mid-stream after [discardChars] characters had already been
+     * shown; the UI must drop that prefix before the failover reply is appended.
+     * See [com.jarvis.ai.provider.RouteChunk.Rewind].
+     */
+    data class Rewind(val discardChars: Int) : OrchestratorUpdate()
+
     /** A gated tool needs explicit user confirmation before it can run. */
     data class Confirmation(val toolName: String, val message: String) : OrchestratorUpdate()
 
@@ -221,6 +228,9 @@ class MasterOrchestrator(
                             when (chunk) {
                                 is RouteChunk.Delta ->
                                     emit(OrchestratorUpdate.Delta(chunk.text))
+
+                                is RouteChunk.Rewind ->
+                                    emit(OrchestratorUpdate.Rewind(chunk.discardChars))
 
                                 is RouteChunk.Finished -> {
                                     EventBus.publish(EventType.MODEL_SELECTED, chunk.report.metadata.provider)
@@ -432,30 +442,45 @@ class MasterOrchestrator(
         // Bounded wait for a terminal state; a hot MutableStateFlow.collect never
         // completes on its own, so without a timeout a stuck agent is awaited
         // forever. first{} cancels the flow the moment a terminal state arrives.
-        val completed = withTimeoutOrNull(AUTOMATION_TIMEOUT_MS) {
-            core.getStateFlow().first { state ->
-                if (state != lastState) {
-                    when (state) {
-                        is AgentCore.AgentState.Running ->
-                            updates += OrchestratorUpdate.Delta(state.step)
+        val completed = try {
+            withTimeoutOrNull(AUTOMATION_TIMEOUT_MS) {
+                core.getStateFlow().first { state ->
+                    if (state != lastState) {
+                        when (state) {
+                            is AgentCore.AgentState.Running ->
+                                updates += OrchestratorUpdate.Delta(state.step)
 
-                        is AgentCore.AgentState.Done -> {
-                            updates += OrchestratorUpdate.Delta(state.result)
-                            updates += completed(true, "agent-core", System.currentTimeMillis())
+                            is AgentCore.AgentState.Done -> {
+                                updates += OrchestratorUpdate.Delta(state.result)
+                                updates += completed(true, "agent-core", System.currentTimeMillis())
+                            }
+
+                            is AgentCore.AgentState.Error -> {
+                                updates += OrchestratorUpdate.Delta("Automation error: ${state.message}")
+                                updates += completed(false, "agent-core", System.currentTimeMillis())
+                            }
+
+                            else -> {}
                         }
-
-                        is AgentCore.AgentState.Error -> {
-                            updates += OrchestratorUpdate.Delta("Automation error: ${state.message}")
-                            updates += completed(false, "agent-core", System.currentTimeMillis())
-                        }
-
-                        else -> {}
+                        lastState = state
                     }
-                    lastState = state
+                    state is AgentCore.AgentState.Done || state is AgentCore.AgentState.Error
                 }
-                state is AgentCore.AgentState.Done || state is AgentCore.AgentState.Error
+                true
             }
-            true
+        } finally {
+            // We stopped waiting without the agent reaching a terminal state —
+            // either the timeout fired or the caller cancelled the request. The
+            // agent runs on its OWN scope, so it would otherwise keep executing
+            // screen actions (tap/type/swipe) after we already told the user we
+            // gave up. Cancel it so an abandoned task never keeps driving the
+            // device. No-op when the agent already finished.
+            val terminal = core.getStateFlow().value
+            if (terminal !is AgentCore.AgentState.Done &&
+                terminal !is AgentCore.AgentState.Error
+            ) {
+                core.cancelTask()
+            }
         }
 
         if (completed != true && updates.none { it is OrchestratorUpdate.Completed }) {

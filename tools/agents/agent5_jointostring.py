@@ -7,7 +7,17 @@ receiver expression of every joinToString call and tries to classify it.
 """
 import os, re
 
-ROOT = "/data/AURIX-Android-AI/app/src/main/java"
+# Resolve the app tree from this script's own location so the agent works from
+# any checkout (CI included); override with ROOT=/path if the layout differs.
+ROOT = os.environ.get(
+    "ROOT",
+    os.path.normpath(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "..", "app", "src", "main", "java",
+        )
+    ),
+)
 PKG = os.path.join(ROOT, "com/jarvis/ai")
 
 # declarations we can see: val NAME: TYPE = ... / val NAME = EXPR
