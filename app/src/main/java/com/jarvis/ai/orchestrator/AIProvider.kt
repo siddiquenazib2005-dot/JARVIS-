@@ -118,11 +118,10 @@ open class OpenAICompatibleProvider(
 
     private val jsonContentType = "application/json".toMediaType()
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(180, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .build()
+    // Process-wide: ProviderRouter rebuilds a provider per attempt (and again on
+    // every failover), so an instance-level client would abandon a connection pool
+    // + dispatcher per request. Sharing one is the documented OkHttp usage.
+    private val client: OkHttpClient get() = SHARED_CLIENT
 
     override suspend fun isAvailable(): Boolean = apiKey.isNotBlank()
 
@@ -343,6 +342,14 @@ open class OpenAICompatibleProvider(
                 }
             }
         }
+
+    companion object {
+        private val SHARED_CLIENT: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(180, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .build()
+    }
 }
 
 /** Offline provider for when no network is available. */
