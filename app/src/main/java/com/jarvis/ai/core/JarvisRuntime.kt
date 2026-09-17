@@ -67,12 +67,10 @@ class JarvisRuntime private constructor(context: Context) {
             val f = File(appContext.filesDir, "secrets.properties")
             if (!f.exists()) return
             f.inputStream().use { fileProperties.load(it) }
-            var storedAny = false
             fileProperties.stringPropertyNames().forEach { name ->
                 val value = fileProperties.getProperty(name)?.trim().orEmpty()
                 if (value.isNotBlank() && secureStore.get(name) == null) {
                     secureStore.put(name, value)
-                    storedAny = true
                 }
             }
             // Plaintext source of truth is now the Keystore-encrypted store; drop the file
