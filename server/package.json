@@ -1,0 +1,19 @@
+{
+  "name": "aurix-backend",
+  "version": "1.0.0",
+  "description": "AURIX real backend: multi-provider LLM routing, streaming, memory and tool relay",
+  "main": "src/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "health": "node scripts/smoke.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}
