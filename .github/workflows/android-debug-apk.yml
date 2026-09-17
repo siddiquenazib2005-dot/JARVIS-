@@ -8,7 +8,31 @@ on:
   workflow_dispatch:
 
 jobs:
+  static-analysis:
+    name: Repository static-analysis agents
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run the static-analysis agents
+        # Pure-Python checks (no JDK needed), fast fail so broken refs and
+        # manifest/symbol mismatches block the build job's 20+ minute run.
+        run: |
+          set -o pipefail
+          python3 tools/agents/agent1_symbols.py
+          python3 tools/agents/agent2_manifest.py
+          python3 tools/agents/agent3_structure.py
+          python3 tools/agents/agent4_wiring.py
+          python3 tools/agents/agent5_unused.py
+          python3 tools/agents/agent6_lambda_returns.py
+          python3 tools/agents/agent7_members.py
+          echo "All static-analysis agents passed."
+
   build:
+    needs: static-analysis
     name: Unit tests and debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
