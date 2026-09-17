@@ -24,9 +24,9 @@ jobs:
           set -o pipefail
           python3 tools/agents/agent1_symbols.py
           python3 tools/agents/agent2_manifest.py
-          python3 tools/agents/agent3_structure.py
+          python3 tools/agents/agent3_hygiene.py
           python3 tools/agents/agent4_wiring.py
-          python3 tools/agents/agent5_unused.py
+          python3 tools/agents/agent5_jointostring.py
           python3 tools/agents/agent6_lambda_returns.py
           python3 tools/agents/agent7_members.py
           echo "All static-analysis agents passed."
