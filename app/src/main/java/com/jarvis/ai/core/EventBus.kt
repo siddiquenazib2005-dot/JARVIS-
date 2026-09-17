@@ -39,9 +39,10 @@ object EventBus {
             history.addLast(event)
         }
         listeners[event.type]?.forEach { runCatching { it(event) } }
-        listeners[EventType.ACTION_COMPLETED]?.takeIf { event.type == EventType.TASK_COMPLETED }?.forEach {
-            runCatching { it(event) }
-        }
+        // NOTE: this object used to also re-dispatch a TASK_COMPLETED event to
+        // ACTION_COMPLETED listeners. That cross-wiring had no production
+        // subscriber on either side, and would have silently double-fired any
+        // future ACTION_COMPLETED listener. Removed rather than left to bite.
     }
 
     @Synchronized
