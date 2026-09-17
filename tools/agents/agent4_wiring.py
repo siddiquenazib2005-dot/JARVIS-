@@ -91,7 +91,13 @@ members = [
 # the registry agent is only trustworthy if the two lists really do agree
 exec_src = open(os.path.join(PKG, "orchestrator/ToolExecutor.kt"), encoding="utf-8").read()
 branches = set(re.findall(r'^\s+"([a-z_]+)" -> execute', exec_src, re.M))
-declared_set = set(re.findall(r'^\s+"([a-z_]+)",?$', exec_src.split("SUPPORTED_TOOLS")[-1], re.M))
+# Parse from the FIRST occurrence of SUPPORTED_TOOLS — that is the setOf(...)
+# definition. [-1] would land after a re-export alias such as
+# `val SUPPORTED_TOOLS get() = ToolExecutor.SUPPORTED_TOOLS`, which appears LATER
+# in the file and has no quoted entries, making the check always fail.
+first = exec_src.find("SUPPORTED_TOOLS")
+after_def = exec_src[first:] if first >= 0 else ""
+declared_set = set(re.findall(r'^\s+"([a-z_]+)",?$', after_def, re.M))
 checks = [c for c in checks if c[0] != "SUPPORTED_TOOLS matches executor branches"]
 checks.append((f"SUPPORTED_TOOLS == executor branches ({len(branches)} tools)",
                branches == declared_set))

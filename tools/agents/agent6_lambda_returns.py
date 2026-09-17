@@ -60,6 +60,11 @@ for dirpath, _dirs, files in os.walk(PKG):
             last = stmts[-1]
             for pattern, why in BAD_LAST:
                 if pattern.search(last):
+                    # The "if without else" heuristic must not fire when an else
+                    # branch IS present (multi-line if/else trips the line-anchored
+                    # regex). Skip the pattern and keep checking the others.
+                    if "else" in last and why.startswith("if without else"):
+                        continue
                     findings.append((rel, line, why + " :: " + last[:80]))
                     break
         # also: joinToString with a positional separator that is not a string
