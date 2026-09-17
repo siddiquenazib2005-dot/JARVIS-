@@ -16,6 +16,8 @@ class SpeechRecognitionManager(private val context: Context) {
     val isAvailable: Boolean
         get() = runCatching { SpeechRecognizer.isRecognitionAvailable(context) }.getOrDefault(false)
 
+    // Accessed from both the main thread and the background obtain path.
+    @Volatile
     private var recognizer: SpeechRecognizer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -107,7 +109,20 @@ class SpeechRecognitionManager(private val context: Context) {
             val latch = CountDownLatch(1)
             var createdOnMain: SpeechRecognizer? = null
             mainHandler.post {
-                createdOnMain = createRecognizer()
+                val created = createRecognizer()
+                createdOnMain = created
+                // If the caller already timed out and moved on (or another start()
+                // won the race), do not leave a recognizer connected with no owner:
+                // store it if we still can, otherwise destroy it right here.
+                if (created != null) {
+                    synchronized(this) {
+                        if (recognizer == null) {
+                            recognizer = created
+                        } else {
+                            runCatching { created.destroy() }
+                        }
+                    }
+                }
                 latch.countDown()
             }
             runCatching { latch.await(CREATE_TIMEOUT_MS, TimeUnit.MILLISECONDS) }
