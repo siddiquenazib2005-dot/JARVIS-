@@ -44,11 +44,15 @@ class SecureStore(context: Context) {
                     cipher.doFinal(value.toByteArray(Charsets.UTF_8)),
                     Base64.NO_WRAP
                 )
-            prefs.edit().putString(key, encoded).apply()
+            // commit() not apply(): durable memory is a real guarantee, and a
+            // pending apply() write is lost if the process dies before the
+            // disk flush. commit() also reports failure, so callers can't be
+            // told a memory was saved when it wasn't.
+            prefs.edit().putString(key, encoded).commit()
         }
     }
 
-    fun remove(key: String) = prefs.edit().remove(key).apply()
+    fun remove(key: String) = prefs.edit().remove(key).commit()
 
     fun contains(key: String): Boolean = prefs.contains(key)
 
