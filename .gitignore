@@ -21,6 +21,10 @@ dist/
 /.kotlin
 *.aab
 
+# device-test.sh output (written to repo root, not /tmp)
+device-install.log
+device-artifacts/
+
 # Whole app build dir (tracked build artifacts from an early commit)
 app/build/
 server/node_modules
