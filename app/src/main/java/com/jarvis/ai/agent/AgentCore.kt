@@ -609,7 +609,11 @@ object ActionJsonParser {
                     ))
                     Action.WAIT_FOR -> actions.add(Action.WaitFor(
                         obj.optString("text"),
-                        obj.optInt("timeoutMs", 5000)
+                        // The action schema documents "timeout_ms" (snake_case),
+                        // so that form wins; accept the camelCase spelling too so
+                        // an older prompt/catalog variant still parses instead of
+                        // silently falling back to the default.
+                        obj.optInt("timeout_ms", obj.optInt("timeoutMs", 5000))
                     ))
                     Action.LONG_PRESS -> actions.add(Action.LongPress(obj.optString("text")))
                     Action.LOCK_SCREEN -> actions.add(Action.LockScreen)
