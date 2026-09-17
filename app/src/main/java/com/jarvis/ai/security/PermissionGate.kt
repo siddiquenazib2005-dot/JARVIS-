@@ -77,9 +77,14 @@ object PermissionGate {
                 // user repeatedly confirmed — "forget all my memories" never ran.)
                 GateDecision(level, true, false, false, "user explicitly confirmed high-risk action")
             } else {
+                // The user is ASKED to confirm, not denied outright: executeTool
+                // surfaces this message as a confirmation prompt, and hard-denying
+                // here would make this tier permanently unreachable. Nothing
+                // executes until the user re-sends the command (see the
+                // userConfirmedThisTurn branch above).
                 GateDecision(
-                    level, false, true, denied = true,
-                    message = "$toolName is high-risk and was blocked pending explicit confirmation."
+                    level, false, true, denied = false,
+                    message = "$toolName is high-risk. Send the same command again to confirm and proceed."
                 )
             }
         }

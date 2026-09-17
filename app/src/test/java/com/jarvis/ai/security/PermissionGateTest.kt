@@ -40,13 +40,20 @@ class PermissionGateTest {
     }
 
     @Test
-    fun `high risk is denied without explicit confirmation`() {
+    fun `high risk asks for confirmation and runs once confirmed`() {
         val blocked = PermissionGate.decide("shell")
-        assertTrue(blocked.denied)
+        // The user must be ASKED, not hard-denied: ToolExecutor surfaces this as a
+        // confirmation prompt, and a hard deny would make the confirmed branch below
+        // unreachable through it (the old denied=true dead-ended the whole tier).
         assertTrue(blocked.requiresConfirmation)
+        assertFalse(blocked.allowedWithoutConfirmation)
+        assertFalse(blocked.denied)
+        assertEquals(PermissionLevel.HIGH_RISK, blocked.level)
 
         val allowed = PermissionGate.decide("shell", userConfirmedThisTurn = true)
+        assertTrue(allowed.allowedWithoutConfirmation)
         assertFalse(allowed.denied)
+        assertFalse(allowed.requiresConfirmation)
     }
 
     @Test
