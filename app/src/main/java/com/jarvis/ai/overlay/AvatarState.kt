@@ -70,6 +70,22 @@ enum class AvatarState(
         maxScale = 1.10f,
         periodMs = 620L,
         glyph = "="
+    ),
+
+    /**
+     * A tool or device action is executing on screen (tap/type/swipe/open app).
+     * Visually distinct from THINKING on purpose: this state means AURIX is
+     * touching the device, not just reasoning, so the owner can tell at a
+     * glance whether a screen is about to change.
+     */
+    ACTING(
+        label = "acting on device",
+        innerColor = 0xFFFF3B30.toInt(),
+        outerColor = 0xFFFF9500.toInt(),
+        minScale = 0.86f,
+        maxScale = 1.14f,
+        periodMs = 900L,
+        glyph = "!"
     );
 
     companion object {
@@ -83,9 +99,15 @@ enum class AvatarState(
         fun from(
             isListening: Boolean,
             isSpeaking: Boolean,
-            isLoading: Boolean
+            isLoading: Boolean,
+            isActing: Boolean = false
         ): AvatarState = when {
+            // Speaking wins: while AURIX talks it owns the turn, even if a
+            // follow-up action is already queued.
             isSpeaking -> SPEAKING
+            // Acting beats listening: an in-flight device action can change
+            // the screen, so it must not be masked by the mic indicator.
+            isActing -> ACTING
             isListening -> LISTENING
             isLoading -> THINKING
             else -> IDLE

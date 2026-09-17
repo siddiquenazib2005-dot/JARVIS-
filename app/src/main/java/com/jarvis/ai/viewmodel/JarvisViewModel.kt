@@ -496,7 +496,7 @@ class JarvisViewModel(
         clearNotice()
         val userMessage = Message(sender = Sender.USER, text = input)
         _uiState.update {
-            it.copy(messages = it.messages + userMessage, isLoading = true, latency = LatencyInfo())
+            it.copy(messages = it.messages + userMessage, isLoading = true, isActing = true, latency = LatencyInfo())
         }
         viewModelScope.launch(crashSafe) {
             val reply = withContext(Dispatchers.IO) {
@@ -527,7 +527,7 @@ class JarvisViewModel(
         clearNotice()
         val userMessage = Message(sender = Sender.USER, text = input)
         _uiState.update {
-            it.copy(messages = it.messages + userMessage, isLoading = true, latency = LatencyInfo())
+            it.copy(messages = it.messages + userMessage, isLoading = true, isActing = true, latency = LatencyInfo())
         }
         viewModelScope.launch(crashSafe) {
             val reply = withContext(Dispatchers.IO) {
@@ -559,7 +559,7 @@ class JarvisViewModel(
         reply: String
     ) {
         val replyMessage = Message(sender = Sender.AURIX, text = reply)
-        _uiState.update { it.copy(messages = it.messages + replyMessage, isLoading = false) }
+        _uiState.update { it.copy(messages = it.messages + replyMessage, isLoading = false, isActing = false) }
         ttsQueue.value = reply
         withContext(Dispatchers.IO) {
             db.appendMessage(sessionId, userMessage)
@@ -652,25 +652,34 @@ class JarvisViewModel(
         val userMessage = Message(sender = Sender.USER, text = input)
         val waiting = Message(sender = Sender.AURIX, text = "Working on that locally, sir...")
         _uiState.update {
-            it.copy(messages = it.messages + userMessage + waiting, isLoading = true, latency = LatencyInfo())
+            it.copy(messages = it.messages + userMessage + waiting, isLoading = true, isActing = true, latency = LatencyInfo())
         }
         viewModelScope.launch(Dispatchers.IO + crashSafe) {
-            db.appendMessage(sessionId, userMessage)
-            val reply = runCatching { quickCommands.handle(input) }
-                .getOrElse { error -> "That command failed on the device, sir: ${error.message ?: error::class.java.simpleName}" }
-                ?.takeIf { it.isNotBlank() }
-                ?: "I understood this as a device command, sir, but I could not map it safely."
-            val clean = if (QuickCommandRouter.isSoftFail(reply)) QuickCommandRouter.cleanFailure(reply) else reply
-            db.appendMessage(sessionId, waiting.copy(text = clean))
-            db.touchSession(sessionId)
-            refreshSessionsBlocking()
-            _uiState.update { state ->
-                state.copy(
-                    messages = state.messages.map { if (it.id == waiting.id) it.copy(text = clean) else it },
-                    isLoading = false
-                )
+            try {
+                db.appendMessage(sessionId, userMessage)
+                val reply = runCatching { quickCommands.handle(input) }
+                    .getOrElse { error -> "That command failed on the device, sir: ${error.message ?: error::class.java.simpleName}" }
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "I understood this as a device command, sir, but I could not map it safely."
+                val clean = if (QuickCommandRouter.isSoftFail(reply)) QuickCommandRouter.cleanFailure(reply) else reply
+                db.appendMessage(sessionId, waiting.copy(text = clean))
+                db.touchSession(sessionId)
+                refreshSessionsBlocking()
+                _uiState.update { state ->
+                    state.copy(
+                        messages = state.messages.map { if (it.id == waiting.id) it.copy(text = clean) else it },
+                        isLoading = false,
+                        isActing = false
+                    )
+                }
+                ttsQueue.value = clean
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                // Never leave the orb stuck in ACTING if the device path blew up.
+                _uiState.update { it.copy(isLoading = false, isActing = false) }
+                throw e
             }
-            ttsQueue.value = clean
         }
     }
 
@@ -905,7 +914,9 @@ class JarvisViewModel(
                     Message(sender = Sender.AURIX, text = friendlyError(e), isError = true)
                 )
             } finally {
-                _uiState.update { it.copy(isLoading = false) }
+                // Covers tool/automation turns as well as plain chat: whatever the
+                // pipeline was doing, the orb must not stay lit after it ends.
+                _uiState.update { it.copy(isLoading = false, isActing = false) }
                 persistReplyIfAny(sessionId, replyId)
                 // Hands-free: the reply is fully generated (or cancelled); once any
                 // remaining queued sentences have been voiced, the mic re-arms.
@@ -928,7 +939,7 @@ class JarvisViewModel(
 
         val caption = prompt.ifBlank { DEFAULT_VISION_PROMPT }
         val userMessage = Message(sender = Sender.USER, text = "[Image] $caption")
-        _uiState.update { it.copy(messages = it.messages + userMessage, isLoading = true) }
+        _uiState.update { it.copy(messages = it.messages + userMessage, isLoading = true, isActing = true) }
 
         generationJob = viewModelScope.launch(crashSafe) {
             try {
@@ -957,7 +968,7 @@ class JarvisViewModel(
                     Message(sender = Sender.AURIX, text = friendlyError(e), isError = true)
                 )
             } finally {
-                _uiState.update { it.copy(isLoading = false) }
+                _uiState.update { it.copy(isLoading = false, isActing = false) }
             }
         }
     }
