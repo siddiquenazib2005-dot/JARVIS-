@@ -30,3 +30,7 @@ app/build/
 server/node_modules
 server/.env
 server/data
+
+# Python bytecode
+__pycache__/
+*.py[cod]
