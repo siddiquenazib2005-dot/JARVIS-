@@ -59,6 +59,7 @@ class MissionStateMachineTest {
     @Test
     fun `cancelled mission cannot continue executing later`() {
         var m = fresh()
+        m = transition(m, MissionState.UNDERSTANDING)!!
         m = transition(m, MissionState.PLANNING)!!
         m = MissionStateMachine.requestCancellation(m)
         assertEquals(MissionState.CANCELLED, m.state)
