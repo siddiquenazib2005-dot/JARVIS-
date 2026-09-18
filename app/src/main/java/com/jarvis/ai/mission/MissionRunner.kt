@@ -244,4 +244,9 @@ class MissionRunner(
     private fun publish(mission: Mission) {
         _active.value = mission
     }
+
+    /** Test-only entry point for driving the observable mission directly. */
+    internal fun publishForTest(mission: Mission?) {
+        _active.value = mission
+    }
 }
