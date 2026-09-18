@@ -132,16 +132,15 @@ fun AvatarView(
             .aspectRatio(1f),
         contentAlignment = Alignment.Center
     ) {
-        // Reactive glow wash behind the character. Touch-transparent.
+        // Reactive glow wash behind the character. Touch-transparent: the wash
+        // draws under the avatar and never intercepts taps.
         if (state != AvatarState.IDLE) {
-            // Reactive glow wash behind the character. Touch-transparent: the
-            // wash draws under the avatar and never intercepts taps.
             Box(
                 modifier = Modifier
                     .fillMaxWidth(0.62f)
                     .aspectRatio(1f)
                     .background(colors.glowAccent.copy(alpha = glowAlpha))
-            )
+            ) {}
         }
         LottieAnimation(
             composition = composition,
