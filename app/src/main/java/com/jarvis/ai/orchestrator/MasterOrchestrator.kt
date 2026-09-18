@@ -329,12 +329,18 @@ class MasterOrchestrator(
                     Log.w(TAG, "memory wipe failed: ${e.message}")
                     -1
                 }
+                // Report the REAL outcome: wipeAll() returning < 0 (or throwing)
+                // means nothing was erased, and the Completed event must carry
+                // success=false so the UI and latency stats can't be told the
+                // wipe landed when it did not. Matches the recall branch.
+                val succeeded = wiped >= 0
                 emit(
                     OrchestratorUpdate.Delta(
-                        if (wiped >= 0) "All memories erased, sir."
+                        if (succeeded) "All memories erased, sir."
                         else "Memory wipe failed, sir."
                     )
                 )
+                emit(completed(succeeded, "vector-memory", System.currentTimeMillis()))
             } else {
                 emit(OrchestratorUpdate.Confirmation("memory_wipe_all", decision.message))
             }
