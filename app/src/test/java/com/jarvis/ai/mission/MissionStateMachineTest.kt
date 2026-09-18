@@ -155,6 +155,7 @@ class MissionStateMachineTest {
         assertNull(transition(m, MissionState.COMPLETED))
     }
 
-    private fun transition(mission: Mission, next: MissionState): Mission? =
+    private fun transition(mission: Mission, next: MissionState): Mission =
         MissionStateMachine.transition(mission, next)
+            ?: error("illegal transition $mission.state -> $next")
 }

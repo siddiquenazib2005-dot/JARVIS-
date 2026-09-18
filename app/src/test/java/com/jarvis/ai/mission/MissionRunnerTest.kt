@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -69,14 +70,16 @@ class MissionRunnerTest {
         var observedActive = false
         // Collect the first emitted state synchronously after starting.
         val mission = coroutineScope {
-            val collect = async {
+            val collector = launch {
                 runner.activeMission.collect { m ->
                     if (m != null && m.state.isActive) observedActive = true
-                    if (m != null && m.isTerminal) this.cancel()
+                    if (m != null && m.isTerminal) this@coroutineScope.cancel()
                 }
             }
-            runner.run("goal", plan("read_screen"))
-            collect.cancel()
+            val run = async { runner.run("goal", plan("read_screen")) }
+            // Wait for a terminal state, then stop collecting.
+            run.await()
+            collector.cancel()
             runner.activeMission.value!!
         }
         assertTrue(observedActive)
