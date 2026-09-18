@@ -97,8 +97,8 @@ class DeviceToolExecutor(
             result.status == com.jarvis.ai.accessibility.A11yStatus.SUCCESS ->
                 ToolExecutionResult.Verified(result.message, result.verificationStatus)
             result.errorCode == A11yErrorCode.APP_NOT_INSTALLED ->
-                ToolExecutionResult.Failure(result.message, recoverable = false)
-            else -> ToolExecutionResult.Failure(result.message, recoverable = result.retryable)
+                ToolExecutionResult.Failure(result.message.orEmpty(), recoverable = false)
+            else -> ToolExecutionResult.Failure(result.message.orEmpty(), recoverable = result.retryable)
         }
     }
 
@@ -186,8 +186,8 @@ class DeviceToolExecutor(
         val forward = (p["direction"] as? String)?.lowercase()?.trim() != "up"
         val root = runCatching { svc.rootInActiveWindow }.getOrNull()
             ?: return ToolExecutionResult.Failure("No window to scroll", recoverable = true)
-        val scrollable = ScrollEngine.findScrollable(root) ?: root
-        val ok = runCatching { ScrollEngine.scroll(scrollable, forward) }.getOrDefault(false)
+        val scrollable = ScrollEngine().findScrollable(root) ?: root
+        val ok = runCatching { ScrollEngine().scroll(scrollable, forward) }.getOrDefault(false)
         return if (ok) ToolExecutionResult.Verified("Scrolled", VerificationStatus.VERIFIED)
         else ToolExecutionResult.Failure("Scroll had no effect", recoverable = true)
     }
@@ -204,7 +204,7 @@ class DeviceToolExecutor(
         if (context.hasPasswordField) {
             return ToolExecutionResult.Failure("Refusing to type into a password field", recoverable = false)
         }
-        val ok = runCatching { TextInputEngine.setText(focused, text) }.getOrDefault(false)
+        val ok = runCatching { TextInputEngine().setText(focused, text) }.getOrDefault(false)
         if (!ok) return ToolExecutionResult.Failure("Type was rejected", recoverable = true)
 
         // Verify the field actually holds the text now.
