@@ -27,7 +27,24 @@ data class ExtendedColors(
     val userBrush: Brush = Brush.linearGradient(
         listOf(Color(0xFFFF1744), Color(0xFFFF6B00))
     ),
-    val onUserBubble: Color = Color.White
+    val onUserBubble: Color = Color.White,
+    // -- Phase 1: glassmorphism tokens for the companion home screen. ----------
+    /** Translucent surface used by GlassCard; 0.6-0.8 alpha per the design spec. */
+    val glassSurface: Color = Color(0xFF1A0B0E).copy(alpha = 0.66f),
+    /** A stronger variant for chips and the input bar resting on top of cards. */
+    val glassSurfaceStrong: Color = Color(0xFF241014).copy(alpha = 0.82f),
+    /** The soft edge highlight that reads as frosted glass, never a hard border. */
+    val glassRim: Color = Color.White.copy(alpha = 0.10f),
+    /** Accent glow behind the avatar and active chips. */
+    val glowAccent: Color = Color(0xFFFF6B00).copy(alpha = 0.35f),
+    /** Home-screen gradient, extending the existing DeepSpace->PanelBlue family. */
+    val homeBrush: Brush = Brush.linearGradient(
+        listOf(Color(0xFF050506), Color(0xFF140A0D), Color(0xFF050506))
+    ),
+    /** Text colour for the warm greeting header. */
+    val greetingPrimary: Color = Color(0xFFF7F3F4),
+    /** Secondary text used by status lines and card labels. */
+    val greetingSecondary: Color = Color(0xFFA89FA2)
 )
 
 val LocalJarvisColors = staticCompositionLocalOf { ExtendedColors() }
