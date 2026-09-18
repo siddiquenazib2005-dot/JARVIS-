@@ -89,7 +89,9 @@ fun AurixHomeScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val orbLevel by viewModel.orbLevel.collectAsState(initial = 0f)
-    val active = state.isListening || state.isSpeaking || state.isLoading
+    // isActing is included: a running tool/device action must read as ACTIVE,
+    // otherwise the home orb reports READY while AURIX is mid-automation.
+    val active = state.isListening || state.isSpeaking || state.isLoading || state.isActing
 
     Box(modifier = Modifier.fillMaxSize().background(HomeInk)) {
         GlowBackground(modifier = Modifier.fillMaxSize(), level = orbLevel)
