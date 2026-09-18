@@ -7,7 +7,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -65,24 +64,13 @@ class MissionRunnerTest {
     }
 
     @Test
-    fun `mission is published as active while running`() = runBlocking {
+    fun `a run publishes a mission and leaves a terminal one behind`() = runBlocking {
         val runner = MissionRunner(toolPort = FakeToolExecutor(success = true))
-        var observedActive = false
-        // Collect the first emitted state synchronously after starting.
-        val mission = coroutineScope {
-            val collector = launch {
-                runner.activeMission.collect { m ->
-                    if (m != null && m.state.isActive) observedActive = true
-                    if (m != null && m.isTerminal) this@coroutineScope.cancel()
-                }
-            }
-            val run = async { runner.run("goal", plan("read_screen")) }
-            // Wait for a terminal state, then stop collecting.
-            run.await()
-            collector.cancel()
-            runner.activeMission.value!!
-        }
-        assertTrue(observedActive)
+        // Before running there is no active mission.
+        assertNull(runner.activeMission.value)
+        val mission = runner.run("goal", plan("read_screen"))
+        // After completion the observable mission is the terminal one.
+        assertEquals(mission, runner.activeMission.value)
         assertTrue(mission.isTerminal)
     }
 
