@@ -35,6 +35,8 @@ import com.jarvis.ai.onboarding.OnboardingPrefs
 import com.jarvis.ai.service.WakeWordService
 import com.jarvis.ai.ui.home.HomeDestination
 import com.jarvis.ai.ui.home.HomeScreen
+import com.jarvis.ai.ui.home.MemoriesPlaceholder
+import com.jarvis.ai.ui.home.ScanPlaceholder
 import com.jarvis.ai.ui.home.HomeViewModel
 import com.jarvis.ai.ui.screens.MissionAwareHomeScreen
 import com.jarvis.ai.ui.screens.OnboardingScreen
