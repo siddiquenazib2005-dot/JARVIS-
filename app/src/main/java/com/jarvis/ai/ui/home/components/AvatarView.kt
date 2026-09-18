@@ -135,12 +135,13 @@ fun AvatarView(
         // Reactive glow wash behind the character. Touch-transparent: the wash
         // draws under the avatar and never intercepts taps.
         if (state != AvatarState.IDLE) {
-            Box(
+            androidx.compose.foundation.Canvas(
                 modifier = Modifier
                     .fillMaxWidth(0.62f)
                     .aspectRatio(1f)
-                    .background(colors.glowAccent.copy(alpha = glowAlpha))
-            ) {}
+            ) {
+                drawCircle(color = colors.glowAccent.copy(alpha = glowAlpha))
+            }
         }
         LottieAnimation(
             composition = composition,
