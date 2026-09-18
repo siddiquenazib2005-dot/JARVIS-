@@ -106,7 +106,7 @@ class MissionVoiceBridge(
     var pendingApproval: String? = null
         internal set
 
-    private fun announceNow(text: String) {
+    internal fun announceNow(text: String) {
         _lastAnnouncement.value = text
         speech.speak(text)
     }
