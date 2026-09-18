@@ -189,6 +189,7 @@ class DeviceToolExecutor(
         } else {
             ToolExecutionResult.Executed("Swiped $direction (no visible change)")
         }
+    }
 
     private suspend fun executeScroll(svc: JarvisAccessibilityService, p: Map<String, Any?>): ToolExecutionResult {
         val forward = (p["direction"] as? String)?.lowercase()?.trim() != "up"
