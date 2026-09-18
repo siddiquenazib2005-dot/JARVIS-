@@ -1,0 +1,220 @@
+package com.jarvis.ai.mission
+
+import com.jarvis.ai.accessibility.VerificationStatus
+import com.jarvis.ai.memory.MemoryEngine
+import com.jarvis.ai.orchestrator.CancellationToken
+import com.jarvis.ai.orchestrator.PlanStep
+import com.jarvis.ai.orchestrator.ToolExecutor
+import com.jarvis.ai.planning.AgentLimits
+import com.jarvis.ai.planning.AgentLoop
+import com.jarvis.ai.planning.AgentRunReport
+import com.jarvis.ai.planning.StepOutcome
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * Phase-2 §2/§5/§6: runs a [Mission] through the EXISTING [AgentLoop] and drives
+ * its state machine from real tool outcomes.
+ *
+ * Pipeline:  Mission → AgentLoop → ToolExecutor/DeviceToolExecutor →
+ *            Observation (ScreenContext) → Verification → Mission update.
+ *
+ * The AgentLoop is not replaced or duplicated; this class is the adapter that
+ * speaks Mission state to the UI while the loop speaks StepOutcome to it.
+ *
+ * Cancellation: a single [CancellationToken] is shared by the mission and the
+ * loop, so a user cancel or a mission timeout stops the loop's step iteration
+ * AND the in-flight device action beneath it.
+ */
+class MissionRunner(
+    private val toolExecutor: ToolExecutor? = null,
+    private val deviceToolExecutor: DeviceToolExecutor? = null,
+    private val memory: MemoryEngine? = null,
+    private val limits: AgentLimits = AgentLimits(),
+    private val loop: AgentLoop = AgentLoop(limits)
+) {
+
+    private val _active = MutableStateFlow<Mission?>(null)
+    /** The live mission, observed by the UI. Null when no mission is running. */
+    val activeMission: StateFlow<Mission?> = _active.asStateFlow()
+
+    /** Cancellation token of the current run; cancelled on user request/timeout. */
+    @Volatile
+    private var currentToken: CancellationToken? = null
+
+    /**
+     * Executes a mission end to end.
+     *
+     * @param planSteps ordered tool steps; produced by the planner.
+     * @param memoryQuery optional recall performed BEFORE planning, surfaced to
+     *        the caller via [Mission.memoryContext] (Phase 2 §7).
+     * @return the terminal mission.
+     */
+    suspend fun run(
+        goal: String,
+        planSteps: List<PlanStep>,
+        memoryQuery: String? = null,
+        userConfirmed: Boolean = false
+    ): Mission {
+        var mission = Mission(
+            goal = goal,
+            plan = planSteps.map { it.description },
+            currentStep = StepProgress(index = 0, totalSteps = planSteps.size)
+        )
+        _active.value = mission
+
+        // §7: recall relevant context BEFORE planning. Only non-sensitive recall
+        // is performed; nothing is stored here (storage happens on success).
+        memoryQuery?.let { q ->
+            mission = mission.copy(memoryContext = memory?.recallFact(q))
+            publish(mission)
+        }
+
+        mission = requireNotNull(MissionStateMachine.transition(mission, MissionState.UNDERSTANDING)) { "UNDERSTANDING" }
+        mission = requireNotNull(MissionStateMachine.transition(mission, MissionState.PLANNING)) { "PLANNING" }
+        publish(mission)
+
+        // Device tools need confirmation handling; the gate is consulted per step.
+        mission = requireNotNull(MissionStateMachine.transition(mission, MissionState.EXECUTING)) { "EXECUTING" }
+
+        val token = CancellationToken().also { currentToken = it }
+        val outputs = linkedMapOf<Int, String>()
+
+        val report: AgentRunReport = loop.run(
+            goal = goal,
+            steps = planSteps,
+            cancellationToken = token,
+            executor = { step, prior ->
+                // Reflect the current step in the observable mission BEFORE work.
+                mission = mission.copy(
+                    currentStep = mission.currentStep.copy(
+                        index = planSteps.indexOf(step).coerceAtLeast(0),
+                        toolName = step.toolName,
+                        actionDescription = step.description,
+                        stepVerification = VerificationStatus.NOT_CHECKED
+                    )
+                )
+                publish(mission)
+
+                executeStep(step, prior, outputs, userConfirmed, token, mission).also { outcome ->
+                    // Bookkeeping: a Verified step advances, a Failed one may retry.
+                    mission = MissionStateMachine.advanceStep(mission, outcome)
+                    publish(mission)
+                }
+            },
+            verifier = { step, success ->
+                // The loop's own verifier hook maps to mission VERIFYING.
+                mission = MissionStateMachine.transition(mission, MissionState.VERIFYING) ?: mission
+                publish(mission)
+                success is StepOutcome.Success
+            }
+        )
+
+        mission = finish(mission, report, token)
+        publish(mission)
+        return mission
+    }
+
+    /**
+     * Runs ONE plan step through the appropriate executor and converts the raw
+     * result into a [StepOutcome] the AgentLoop understands.
+     */
+    private suspend fun executeStep(
+        step: PlanStep,
+        prior: Map<Int, String>,
+        outputs: mutableMap<Int, String>,
+        userConfirmed: Boolean,
+        token: CancellationToken,
+        mission: Mission
+    ): StepOutcome {
+        token.checkCancellation()
+
+        val isDeviceTool = DeviceToolExecutor.SUPPORTED_DEVICE_TOOLS.contains(step.toolName)
+        val def = com.jarvis.ai.orchestrator.ToolRegistry.getTool(step.toolName)
+
+        // Confirmation gate: a tool requiring confirmation that was not confirmed
+        // this turn asks instead of executing.
+        if (def?.confirmationRequired == true && !userConfirmed) {
+            return StepOutcome.Failure("Confirmation required for ${step.toolName}", recoverable = true)
+        }
+
+        return try {
+            if (isDeviceTool) {
+                val device = deviceToolExecutor
+                    ?: return StepOutcome.Failure("Device tools unavailable", recoverable = false)
+                when (val r = device.execute(step.toolName, step.parameters)) {
+                    is ToolExecutionResult.Verified -> {
+                        outputs[outputs.size] = r.observation.orEmpty()
+                        StepOutcome.Success(r.observation ?: "verified")
+                    }
+                    is ToolExecutionResult.Executed -> {
+                        outputs[outputs.size] = r.observation.orEmpty()
+                        StepOutcome.Success(r.observation ?: "executed")
+                    }
+                    is ToolExecutionResult.Failure ->
+                        StepOutcome.Failure(r.error, r.recoverable)
+                    is ToolExecutionResult.Unsupported ->
+                        StepOutcome.Failure(r.reason, recoverable = false)
+                }
+            } else {
+                val exec = toolExecutor
+                    ?: return StepOutcome.Failure("Tool subsystem unavailable", recoverable = false)
+                val result = exec.executeTool(step.toolName, step.parameters, userConfirmed)
+                when (result) {
+                    is ToolExecutor.ToolResult.Success -> {
+                        outputs[outputs.size] = result.result
+                        StepOutcome.Success(result.result)
+                    }
+                    is ToolExecutor.ToolResult.Failure ->
+                        StepOutcome.Failure(result.error, result.recoverable)
+                    is ToolExecutor.ToolResult.ConfirmationRequired ->
+                        StepOutcome.Failure("Confirmation required", recoverable = true)
+                }
+            }
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            StepOutcome.Failure(e.message ?: e::class.java.simpleName, recoverable = true)
+        }
+    }
+
+    /** Maps the loop's aggregate report onto a terminal mission state. */
+    private fun finish(mission: Mission, report: AgentRunReport, token: CancellationToken): Mission {
+        // A user cancellation wins over the report's own success flag.
+        if (token.isCancelled || mission.cancellationRequested) {
+            return MissionStateMachine.requestCancellation(mission)
+        }
+        val terminal = if (report.success) MissionState.COMPLETED else MissionState.FAILED
+        val updated = MissionStateMachine.transition(mission, terminal) ?: mission
+        return when (terminal) {
+            MissionState.COMPLETED -> {
+                // §7: store a durable pattern ONLY on verified success. Content is
+                // the goal text, never tool arguments or screen payloads.
+                memory?.rememberFact("mission_pattern", goalOf(mission))
+                updated.copy(
+                    verification = VerificationStatus.VERIFIED,
+                    observation = report.completedSteps.lastOrNull()
+                )
+            }
+            else -> updated.copy(
+                verification = VerificationStatus.FAILED,
+                lastError = report.stoppedReason ?: "Mission did not complete"
+            )
+        }
+    }
+
+    private fun goalOf(mission: Mission): String = mission.goal.take(200)
+
+    /** Requests the active mission to stop. Propagates to the loop and device layer. */
+    fun cancel() {
+        currentToken?.cancel()
+        _active.value?.let { current ->
+            _active.value = MissionStateMachine.requestCancellation(current)
+        }
+    }
+
+    private fun publish(mission: Mission) {
+        _active.value = mission
+    }
+}
