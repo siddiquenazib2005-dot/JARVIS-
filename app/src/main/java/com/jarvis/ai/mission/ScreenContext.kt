@@ -61,10 +61,10 @@ data class ScreenContext(
 
             return ScreenContext(
                 packageName = root?.packageName?.toString() ?: snapshot?.packageName,
-                // Android does not expose the foreground activity through the
-                // accessibility tree; the window title is the closest honest signal
-                // and is null when unavailable. Never guessed from the package.
-                activityName = runCatching { service.windows?.firstOrNull { it.isActive }?.label?.toString() }.getOrNull(),
+                // Android deliberately does NOT expose the foreground activity
+                // name through the accessibility tree. Reporting null here is the
+                // honest answer; callers must not infer it from the package.
+                activityName = null,
                 visibleText = visible,
                 nodes = all,
                 clickableNodes = all.filter { it.clickable && it.visible },

@@ -8,7 +8,8 @@ import com.jarvis.ai.orchestrator.ToolExecutor
 import com.jarvis.ai.planning.AgentLimits
 import com.jarvis.ai.planning.AgentLoop
 import com.jarvis.ai.planning.AgentRunReport
-import com.jarvis.ai.planning.StepOutcome
+ as LoopStepOutcome
+
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -110,17 +111,24 @@ class MissionRunner(
                 )
                 publish(mission)
 
-                executeStep(step, prior, outputs, userConfirmed, token, mission).also { outcome ->
-                    // Bookkeeping: a Verified step advances, a Failed one may retry.
-                    mission = MissionStateMachine.advanceStep(mission, outcome)
-                    publish(mission)
+                val ourOutcome = executeStep(step, planSteps.indexOf(step), prior, outputs, userConfirmed, token, mission)
+                mission = MissionStateMachine.advanceStep(mission, ourOutcome)
+                publish(mission)
+                // Translate to the loop's own StepOutcome contract.
+                when (ourOutcome) {
+                    is MissionStepOutcome.Verified, is MissionStepOutcome.Executed ->
+                        LoopStepOutcome.Success(ourOutcome.observation ?: "")
+                    is MissionStepOutcome.Failure ->
+                        LoopStepOutcome.Failure(ourOutcome.error, ourOutcome.recoverable)
+                    is MissionStepOutcome.Retrying ->
+                        LoopStepOutcome.Success("retry ${ourOutcome.attempt}")
                 }
             },
             verifier = { step, success ->
                 // The loop's own verifier hook maps to mission VERIFYING.
                 mission = MissionStateMachine.transition(mission, MissionState.VERIFYING) ?: mission
                 publish(mission)
-                success is StepOutcome.Success
+                success is LoopStepOutcome.Success
             }
         )
 
@@ -135,12 +143,13 @@ class MissionRunner(
      */
     private suspend fun executeStep(
         step: PlanStep,
+        stepIndex: Int,
         prior: Map<Int, String>,
         outputs: mutableMap<Int, String>,
         userConfirmed: Boolean,
         token: CancellationToken,
         mission: Mission
-    ): StepOutcome {
+    ): MissionStepOutcome {
         token.checkCancellation()
 
         val isDeviceTool = DeviceToolExecutor.SUPPORTED_DEVICE_TOOLS.contains(step.toolName)
@@ -149,48 +158,48 @@ class MissionRunner(
         // Confirmation gate: a tool requiring confirmation that was not confirmed
         // this turn asks instead of executing.
         if (def?.confirmationRequired == true && !userConfirmed) {
-            return StepOutcome.Failure("Confirmation required for ${step.toolName}", recoverable = true)
+            return MissionStepOutcome.Failure("Confirmation required for ${step.toolName}", recoverable = true)
         }
 
         return try {
             if (isDeviceTool) {
                 val device = deviceToolExecutor
-                    ?: return StepOutcome.Failure("Device tools unavailable", recoverable = false)
+                    ?: return MissionStepOutcome.Failure("Device tools unavailable", recoverable = false)
                 when (val r = device.execute(step.toolName, step.parameters)) {
                     is ToolExecutionResult.Verified -> {
-                        outputs[outputs.size] = r.observation.orEmpty()
-                        StepOutcome.Success(r.observation ?: "verified")
+                        outputs[stepIndex] = r.observation.orEmpty()
+                        MissionStepOutcome.Verified(r.observation)
                     }
                     is ToolExecutionResult.Executed -> {
-                        outputs[outputs.size] = r.observation.orEmpty()
-                        StepOutcome.Success(r.observation ?: "executed")
+                        outputs[stepIndex] = r.observation.orEmpty()
+                        MissionStepOutcome.Executed(r.observation)
                     }
                     is ToolExecutionResult.Failure ->
-                        StepOutcome.Failure(r.error, r.recoverable)
+                        MissionStepOutcome.Failure(r.error, r.recoverable)
                     is ToolExecutionResult.Unsupported ->
-                        StepOutcome.Failure(r.reason, recoverable = false)
+                        MissionStepOutcome.Failure(r.reason, recoverable = false)
                 }
             } else {
                 val result = when {
                     toolPort != null -> toolPort.execute(step.toolName, step.parameters, userConfirmed)
                     toolExecutor != null -> toolExecutor.executeTool(step.toolName, step.parameters, userConfirmed)
-                    else -> return StepOutcome.Failure("Tool subsystem unavailable", recoverable = false)
+                    else -> return MissionStepOutcome.Failure("Tool subsystem unavailable", recoverable = false)
                 }
                 when (result) {
                     is ToolExecutor.ToolResult.Success -> {
-                        outputs[outputs.size] = result.result
-                        StepOutcome.Success(result.result)
+                        outputs[stepIndex] = result.result
+                        MissionStepOutcome.Verified(result.result)
                     }
                     is ToolExecutor.ToolResult.Failure ->
-                        StepOutcome.Failure(result.error, result.recoverable)
+                        MissionStepOutcome.Failure(result.error, result.recoverable)
                     is ToolExecutor.ToolResult.ConfirmationRequired ->
-                        StepOutcome.Failure("Confirmation required", recoverable = true)
+                        MissionStepOutcome.Failure("Confirmation required", recoverable = true)
                 }
             }
         } catch (ce: kotlinx.coroutines.CancellationException) {
             throw ce
         } catch (e: Exception) {
-            StepOutcome.Failure(e.message ?: e::class.java.simpleName, recoverable = true)
+            MissionStepOutcome.Failure(e.message ?: e::class.java.simpleName, recoverable = true)
         }
     }
 

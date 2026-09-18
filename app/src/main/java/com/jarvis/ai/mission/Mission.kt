@@ -152,18 +152,18 @@ object MissionStateMachine {
         )
 
     /** Advances step bookkeeping when a step finishes. */
-    fun advanceStep(mission: Mission, outcome: StepOutcome): Mission {
+    fun advanceStep(mission: Mission, outcome: MissionStepOutcome): Mission {
         val total = mission.currentStep.totalSteps
         val nextIndex = mission.currentStep.index + 1
         return mission.copy(
             currentStep = mission.currentStep.copy(
                 index = if (total > 0) nextIndex.coerceIn(0, total - 1) else nextIndex,
                 stepVerification = when (outcome) {
-                    is StepOutcome.Verified -> VerificationStatus.VERIFIED
-                    is StepOutcome.Failed -> VerificationStatus.FAILED
+                    is MissionStepOutcome.Verified -> VerificationStatus.VERIFIED
+                    is MissionStepOutcome.Failure -> VerificationStatus.FAILED
                     else -> VerificationStatus.NOT_CHECKED
                 },
-                stepRetryCount = if (outcome is StepOutcome.Retrying) mission.currentStep.stepRetryCount + 1
+                stepRetryCount = if (outcome is MissionStepOutcome.Retrying) mission.currentStep.stepRetryCount + 1
                     else mission.currentStep.stepRetryCount
             ),
             updatedAt = System.currentTimeMillis()
@@ -176,13 +176,13 @@ object MissionStateMachine {
 }
 
 /** Outcome of one step, as reported back to the mission. */
-sealed class StepOutcome {
+sealed class MissionStepOutcome {
     /** Tool ran; verification pending. */
-    data class Executed(val observation: String? = null) : StepOutcome()
+    data class Executed(val observation: String? = null) : MissionStepOutcome()
     /** Tool ran AND its expected effect was verified. */
-    data class Verified(val observation: String? = null) : StepOutcome()
+    data class Verified(val observation: String? = null) : MissionStepOutcome()
     /** Tool failed or verification failed; a bounded retry is allowed. */
-    data class Failed(val error: String, val recoverable: Boolean) : StepOutcome()
+    data class Failure(val error: String, val recoverable: Boolean) : MissionStepOutcome()
     /** A retry is being attempted. */
-    data class Retrying(val attempt: Int) : StepOutcome()
+    data class Retrying(val attempt: Int) : MissionStepOutcome()
 }

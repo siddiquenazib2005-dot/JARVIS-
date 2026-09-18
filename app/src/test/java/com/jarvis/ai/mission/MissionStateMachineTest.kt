@@ -101,7 +101,7 @@ class MissionStateMachineTest {
     @Test
     fun `verified step advances progress and records verification`() {
         val m = fresh().copy(currentStep = StepProgress(index = 1, totalSteps = 3))
-        val advanced = MissionStateMachine.advanceStep(m, StepOutcome.Verified("saw the result"))
+        val advanced = MissionStateMachine.advanceStep(m, MissionStepOutcome.Verified("saw the result"))
         assertEquals(VerificationStatus.VERIFIED, advanced.currentStep.stepVerification)
         assertEquals(2, advanced.currentStep.index)
     }
@@ -109,7 +109,7 @@ class MissionStateMachineTest {
     @Test
     fun `failed step records failed verification without advancing past recovery`() {
         val m = fresh().copy(currentStep = StepProgress(index = 0, totalSteps = 2))
-        val advanced = MissionStateMachine.advanceStep(m, StepOutcome.Failed("no such node", recoverable = true))
+        val advanced = MissionStateMachine.advanceStep(m, MissionStepOutcome.Failure("no such node", recoverable = true))
         assertEquals(VerificationStatus.FAILED, advanced.currentStep.stepVerification)
         assertEquals(0, advanced.currentStep.index)
     }
@@ -117,8 +117,8 @@ class MissionStateMachineTest {
     @Test
     fun `retrying increments the per-step retry counter`() {
         val m = fresh().copy(currentStep = StepProgress(index = 0, totalSteps = 2))
-        val once = MissionStateMachine.advanceStep(m, StepOutcome.Retrying(attempt = 1))
-        val twice = MissionStateMachine.advanceStep(once, StepOutcome.Retrying(attempt = 2))
+        val once = MissionStateMachine.advanceStep(m, MissionStepOutcome.Retrying(attempt = 1))
+        val twice = MissionStateMachine.advanceStep(once, MissionStepOutcome.Retrying(attempt = 2))
         assertEquals(1, once.currentStep.stepRetryCount)
         assertEquals(2, twice.currentStep.stepRetryCount)
     }
