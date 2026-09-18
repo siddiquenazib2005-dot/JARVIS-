@@ -18,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,6 +33,11 @@ import com.jarvis.ai.diagnostics.CrashGuard
 import com.jarvis.ai.diagnostics.StartupTracker
 import com.jarvis.ai.onboarding.OnboardingPrefs
 import com.jarvis.ai.service.WakeWordService
+import com.jarvis.ai.ui.home.HomeDestination
+import com.jarvis.ai.ui.home.HomeScreen
+import com.jarvis.ai.ui.home.MemoriesPlaceholder
+import com.jarvis.ai.ui.home.ScanPlaceholder
+import com.jarvis.ai.ui.home.HomeViewModel
 import com.jarvis.ai.ui.screens.MissionAwareHomeScreen
 import com.jarvis.ai.ui.screens.OnboardingScreen
 import com.jarvis.ai.ui.screens.VoiceAwareChatScreen
@@ -101,7 +107,7 @@ class MainActivity : ComponentActivity() {
             JarvisTheme {
                 var ready by rememberSaveable { mutableStateOf(false) }
                 var showOnboarding by rememberSaveable { mutableStateOf(false) }
-                var destination by rememberSaveable { mutableStateOf("home") }
+                var destination by rememberSaveable { mutableStateOf(HomeDestination.HOME.route) }
                 val wakeCommand by pendingWakeCommand.collectAsState()
                 val openVoiceMode by pendingVoiceMode.collectAsState()
                 val jarvisViewModel: JarvisViewModel = viewModel(
@@ -124,14 +130,14 @@ class MainActivity : ComponentActivity() {
                     if (ready && !showOnboarding && !command.isNullOrBlank()) {
                         pendingWakeCommand.value = null
                         jarvisViewModel.send(command)
-                        destination = "chat"
+                        destination = HomeDestination.CHAT.route
                     }
                 }
 
                 LaunchedEffect(openVoiceMode, ready, showOnboarding) {
                     if (openVoiceMode && ready && !showOnboarding) {
                         pendingVoiceMode.value = false
-                        destination = "chat"
+                        destination = HomeDestination.CHAT.route
                         if (ContextCompat.checkSelfPermission(
                                 applicationContext,
                                 Manifest.permission.RECORD_AUDIO
@@ -143,11 +149,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                BackHandler(enabled = ready && !showOnboarding && destination == "chat") {
+                BackHandler(enabled = ready && !showOnboarding && destination != HomeDestination.HOME.route) {
                     if (jarvisViewModel.handsFreeActive.value) {
                         jarvisViewModel.toggleHandsFreeMode()
                     } else {
-                        destination = "home"
+                        destination = HomeDestination.HOME.route
                     }
                 }
 
@@ -165,14 +171,21 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     showOnboarding -> OnboardingScreen(onFinished = { showOnboarding = false })
-                    destination == "chat" -> VoiceAwareChatScreen(viewModel = jarvisViewModel)
-                    else -> MissionAwareHomeScreen(
-                        viewModel = jarvisViewModel,
-                        onOpenChat = { destination = "chat" },
-                        onCommand = { command ->
-                            jarvisViewModel.send(command)
-                            destination = "chat"
-                        }
+                    destination == HomeDestination.CHAT.route -> VoiceAwareChatScreen(viewModel = jarvisViewModel)
+                    destination == HomeDestination.SCAN.route -> ScanPlaceholder(
+                        onDone = { destination = HomeDestination.HOME.route }
+                    )
+                    destination == HomeDestination.MEMORIES.route -> MemoriesPlaceholder(
+                        onDone = { destination = HomeDestination.HOME.route }
+                    )
+                    else -> HomeScreen(
+                        viewModel = remember {
+                            HomeViewModel.factory(applicationContext, jarvisViewModel)
+                        }.create(HomeViewModel::class.java),
+                        onOpenChat = { destination = HomeDestination.CHAT.route },
+                        onOpenMemories = { destination = HomeDestination.MEMORIES.route },
+                        onOpenScan = { destination = HomeDestination.SCAN.route },
+                        onOpenSettings = { destination = HomeDestination.HOME.route }
                     )
                 }
             }

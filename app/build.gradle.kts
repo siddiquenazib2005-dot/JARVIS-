@@ -113,6 +113,9 @@ dependencies {
     implementation(libs.mlkit.text.recognition)
     implementation(libs.androidx.work.runtime.ktx)
 
+    // Phase 1: Lottie for the animated AURIX companion avatar.
+    implementation(libs.lottie.compose)
+
     debugImplementation(libs.androidx.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
