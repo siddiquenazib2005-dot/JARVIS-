@@ -52,7 +52,9 @@ class SecureStore(context: Context) {
         }
     }
 
-    fun remove(key: String) = prefs.edit().remove(key).commit()
+    fun remove(key: String) {
+        prefs.edit().remove(key).commit()
+    }
 
     fun contains(key: String): Boolean = prefs.contains(key)
 

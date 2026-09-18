@@ -74,7 +74,7 @@ class ScreenshotCapture(private val context: Context) {
         // surface alive until released. Creating one per capture and releasing it
         // in the finally below keeps repeated captures from leaking displays
         // (each unreleased display would otherwise pin memory until the process dies).
-        var display: android.media.VirtualDisplay? = null
+        var display: android.hardware.display.VirtualDisplay? = null
         var image: android.media.Image? = null
         try {
             display = projection.createVirtualDisplay(
