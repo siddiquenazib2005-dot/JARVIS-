@@ -5,6 +5,7 @@ import com.jarvis.ai.memory.MemoryEngine
 import com.jarvis.ai.orchestrator.CancellationToken
 import com.jarvis.ai.orchestrator.PlanStep
 import com.jarvis.ai.orchestrator.ToolExecutor
+import com.jarvis.ai.orchestrator.ToolResult
 import com.jarvis.ai.planning.AgentLimits
 import com.jarvis.ai.planning.AgentLoop
 import com.jarvis.ai.planning.AgentRunReport
@@ -37,7 +38,7 @@ fun interface ToolExecutionPort {
         toolName: String,
         parameters: Map<String, Any?>,
         userConfirmedThisTurn: Boolean
-    ): com.jarvis.ai.orchestrator.ToolExecutor.ToolResult
+    ): ToolResult
 }
 
 class MissionRunner(
@@ -116,8 +117,10 @@ class MissionRunner(
                 publish(mission)
                 // Translate to the loop's own StepOutcome contract.
                 when (ourOutcome) {
-                    is MissionStepOutcome.Verified, is MissionStepOutcome.Executed ->
-                        LoopStepOutcome.Success(ourOutcome.observation ?: "")
+                    is MissionStepOutcome.Verified ->
+                        LoopStepOutcome.Success(ourOutcome.observation.orEmpty())
+                    is MissionStepOutcome.Executed ->
+                        LoopStepOutcome.Success(ourOutcome.observation ?: "executed")
                     is MissionStepOutcome.Failure ->
                         LoopStepOutcome.Failure(ourOutcome.error, ourOutcome.recoverable)
                     is MissionStepOutcome.Retrying ->
@@ -145,7 +148,7 @@ class MissionRunner(
         step: PlanStep,
         stepIndex: Int,
         prior: Map<Int, String>,
-        outputs: mutableMap<Int, String>,
+        outputs: MutableMap<Int, String>,
         userConfirmed: Boolean,
         token: CancellationToken,
         mission: Mission
@@ -186,13 +189,13 @@ class MissionRunner(
                     else -> return MissionStepOutcome.Failure("Tool subsystem unavailable", recoverable = false)
                 }
                 when (result) {
-                    is ToolExecutor.ToolResult.Success -> {
+                    is ToolResult.Success -> {
                         outputs[stepIndex] = result.result
                         MissionStepOutcome.Verified(result.result)
                     }
-                    is ToolExecutor.ToolResult.Failure ->
+                    is ToolResult.Failure ->
                         MissionStepOutcome.Failure(result.error, result.recoverable)
-                    is ToolExecutor.ToolResult.ConfirmationRequired ->
+                    is ToolResult.ConfirmationRequired ->
                         MissionStepOutcome.Failure("Confirmation required", recoverable = true)
                 }
             }
