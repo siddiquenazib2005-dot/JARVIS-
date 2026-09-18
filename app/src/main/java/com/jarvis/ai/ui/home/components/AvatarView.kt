@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -138,8 +139,9 @@ fun AvatarView(
                     .fillMaxWidth(0.62f)
                     .aspectRatio(1f)
                     .blur(64.dp)
+                    .background(colors.glowAccent)
                     .graphicsLayer { alpha = glowAlpha }
-            )
+            ) {}
         }
         LottieAnimation(
             composition = composition,
@@ -154,7 +156,6 @@ fun AvatarView(
             outlineMasksAndMattes = false,
             applyMergePaths = true
         )
-        androidx.compose.foundation.layout.Spacer(Modifier.fillMaxHeight(0f))
     }
 }
 

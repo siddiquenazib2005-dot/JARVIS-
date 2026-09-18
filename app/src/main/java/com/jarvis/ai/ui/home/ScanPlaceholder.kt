@@ -54,7 +54,7 @@ fun ScanPlaceholder(onDone: () -> Unit, modifier: Modifier = Modifier) {
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp)
-                .statusBarsPadding()
+                .statusBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
