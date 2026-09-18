@@ -190,8 +190,8 @@ class MissionRunner(
                 }
                 when (result) {
                     is ToolResult.Success -> {
-                        outputs[stepIndex] = result.result
-                        MissionStepOutcome.Verified(result.result)
+                        outputs[stepIndex] = result.message
+                        MissionStepOutcome.Verified(result.message)
                     }
                     is ToolResult.Failure ->
                         MissionStepOutcome.Failure(result.error, result.recoverable)
