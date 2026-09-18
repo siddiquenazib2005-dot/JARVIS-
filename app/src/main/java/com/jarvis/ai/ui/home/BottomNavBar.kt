@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.MemoryAlt
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -106,7 +105,7 @@ fun BottomNavBar(
             }
 
             NavIcon(
-                icon = Icons.Outlined.MemoryAlt,
+                icon = Icons.Outlined.Psychology,
                 label = HomeDestination.MEMORIES.label,
                 isSelected = currentRoute == HomeDestination.MEMORIES.route,
                 onClick = { onNavigate(HomeDestination.MEMORIES) },

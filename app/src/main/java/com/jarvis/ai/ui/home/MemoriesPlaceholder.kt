@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,6 +30,7 @@ import com.jarvis.ai.memory.vector.VectorMemoryConfig
 import com.jarvis.ai.memory.vector.VectorMemoryManager
 import com.jarvis.ai.ui.components.GlassCard
 import com.jarvis.ai.ui.theme.extended
+import kotlinx.coroutines.launch
 
 /**
  * Responsibility: the Memories tab — a READ-ONLY view of what AURIX remembers.
@@ -49,6 +51,8 @@ fun MemoriesPlaceholder(onDone: () -> Unit, modifier: Modifier = Modifier) {
     var query by remember { mutableStateOf("") }
     var items by remember { mutableStateOf<List<ScoredMemory>>(emptyList()) }
     var isInitial by remember { mutableStateOf(true) }
+    var isSearching by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     // Built exactly as the rest of the app builds it, but with the local hash
     // embedder so recall works offline with zero keys.
@@ -90,15 +94,22 @@ fun MemoriesPlaceholder(onDone: () -> Unit, modifier: Modifier = Modifier) {
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
-            Button(onClick = {
-                // A blank query is meaningless to a vector search; the local
-                // store keeps the list honest instead of showing empty.
-                val q = query.trim().ifBlank { "aurix" }
-                runCatching {
-                    manager.recall(q, fallbackStore = manager.localStore)
-                }.onSuccess { items = it }
-            }) {
-                Text("Search")
+            Button(
+                onClick = {
+                    // A blank query is meaningless to a vector search; the local
+                    // store keeps the list honest instead of showing empty.
+                    val q = query.trim().ifBlank { "aurix" }
+                    isSearching = true
+                    scope.launch {
+                        runCatching {
+                            manager.recall(q, fallbackStore = manager.localStore)
+                        }.onSuccess { items = it }
+                        isSearching = false
+                    }
+                },
+                enabled = !isSearching
+            ) {
+                Text(if (isSearching) "Searching..." else "Search")
             }
 
             if (isInitial) {
