@@ -168,6 +168,8 @@ class DeviceToolExecutor(
 
     private suspend fun executeSwipe(svc: JarvisAccessibilityService, p: Map<String, Any?>): ToolExecutionResult {
         val direction = (p["direction"] as? String)?.lowercase()?.trim() ?: "up"
+        val reader = ScreenReader(svc)
+        val beforeText = runCatching { ScreenContext.capture(reader, svc).visibleText }.getOrNull()
         val engine = GestureEngine(svc)
         val metrics = context.resources.displayMetrics
         val w = metrics.widthPixels; val h = metrics.heightPixels
@@ -178,18 +180,33 @@ class DeviceToolExecutor(
             "right" -> engine.swipe(w / 4, h / 2, w * 3 / 4, h / 2)
             else -> return ToolExecutionResult.Failure("Unknown swipe direction: $direction", recoverable = false)
         }
-        return if (ok) ToolExecutionResult.Verified("Swiped $direction", VerificationStatus.VERIFIED)
-        else ToolExecutionResult.Failure("Swipe $direction was cancelled", recoverable = true)
-    }
+        if (!ok) return ToolExecutionResult.Failure("Swipe $direction was cancelled", recoverable = true)
+        // A dispatched swipe may still change nothing (non-scrollable screen), so
+        // confirm against a re-read instead of trusting the dispatch flag.
+        val after = runCatching { ScreenContext.capture(ScreenReader(svc), svc) }.getOrNull()
+        return if (after != null && after.visibleText != beforeText) {
+            ToolExecutionResult.Verified("Swiped $direction", VerificationStatus.VERIFIED)
+        } else {
+            ToolExecutionResult.Executed("Swiped $direction (no visible change)")
+        }
 
     private suspend fun executeScroll(svc: JarvisAccessibilityService, p: Map<String, Any?>): ToolExecutionResult {
         val forward = (p["direction"] as? String)?.lowercase()?.trim() != "up"
+        val reader = ScreenReader(svc)
+        val before = runCatching { ScreenContext.capture(reader, svc) }.getOrNull()
         val root = runCatching { svc.rootInActiveWindow }.getOrNull()
             ?: return ToolExecutionResult.Failure("No window to scroll", recoverable = true)
         val scrollable = ScrollEngine().findScrollable(root) ?: root
         val ok = runCatching { ScrollEngine().scroll(scrollable, forward) }.getOrDefault(false)
-        return if (ok) ToolExecutionResult.Verified("Scrolled", VerificationStatus.VERIFIED)
-        else ToolExecutionResult.Failure("Scroll had no effect", recoverable = true)
+        if (!ok) return ToolExecutionResult.Failure("Scroll had no effect", recoverable = true)
+        // Being at the end of a list, a successful scroll changes nothing; report
+        // Executed then, not Verified.
+        val after = runCatching { ScreenContext.capture(reader, svc) }.getOrNull()
+        return if (before != null && after != null && before.visibleText != after.visibleText) {
+            ToolExecutionResult.Verified("Scrolled", VerificationStatus.VERIFIED)
+        } else {
+            ToolExecutionResult.Executed("Scrolled (content unchanged)")
+        }
     }
 
     private suspend fun executeTypeText(svc: JarvisAccessibilityService, p: Map<String, Any?>): ToolExecutionResult {
