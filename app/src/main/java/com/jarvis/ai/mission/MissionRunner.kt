@@ -8,7 +8,7 @@ import com.jarvis.ai.orchestrator.ToolExecutor
 import com.jarvis.ai.planning.AgentLimits
 import com.jarvis.ai.planning.AgentLoop
 import com.jarvis.ai.planning.AgentRunReport
- as LoopStepOutcome
+import com.jarvis.ai.planning.StepOutcome as LoopStepOutcome
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
