@@ -3,6 +3,7 @@ package com.jarvis.ai.mission
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.view.accessibility.AccessibilityNodeInfo
+import kotlinx.coroutines.withTimeoutOrNull
 import com.jarvis.ai.accessibility.A11yErrorCode
 import com.jarvis.ai.accessibility.A11yResult
 import com.jarvis.ai.accessibility.GestureEngine
@@ -68,7 +69,21 @@ class DeviceToolExecutor(
 
         val svc = service ?: return ToolExecutionResult.Unsupported("Accessibility service unavailable")
 
-        return when (toolName) {
+        // Enforce the tool's wall-clock budget. A device action that hangs (a
+        // gesture that never returns, an unresponsive window) is cancelled rather
+        // than allowed to stall the mission forever.
+        return withTimeoutOrNull(definition.timeoutMs) {
+            dispatchTool(toolName, svc, parameters)
+        } ?: ToolExecutionResult.Failure(
+            "$toolName exceeded its ${definition.timeoutMs}ms budget", recoverable = true
+        )
+    }
+
+    private suspend fun dispatchTool(
+        toolName: String,
+        svc: JarvisAccessibilityService,
+        parameters: Map<String, Any?>
+    ): ToolExecutionResult = when (toolName) {
             "open_app" -> executeOpenApp(svc, parameters)
             "press_back" -> executeGlobalAction(svc, AccessibilityService.GLOBAL_ACTION_BACK, "press_back")
             "press_home" -> executeGlobalAction(svc, AccessibilityService.GLOBAL_ACTION_HOME, "press_home")
@@ -81,7 +96,6 @@ class DeviceToolExecutor(
             "find_element" -> executeFindElement(svc, parameters)
             else -> ToolExecutionResult.Failure("Tool not implemented: $toolName", recoverable = false)
         }
-    }
 
     // ------------------------------------------------------------------ tools
 
