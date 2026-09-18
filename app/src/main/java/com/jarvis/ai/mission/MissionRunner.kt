@@ -26,9 +26,22 @@ import kotlinx.coroutines.flow.asStateFlow
  * Cancellation: a single [CancellationToken] is shared by the mission and the
  * loop, so a user cancel or a mission timeout stops the loop's step iteration
  * AND the in-flight device action beneath it.
+ *
+ * Tool-execution seam: the production [ToolExecutor] is final and Context-bound,
+ * so [ToolExecutionPort] keeps the runner (and its tests) decoupled from Android
+ * while still speaking the real [ToolExecutor.ToolResult] contract.
  */
+fun interface ToolExecutionPort {
+    suspend fun execute(
+        toolName: String,
+        parameters: Map<String, Any?>,
+        userConfirmedThisTurn: Boolean
+    ): com.jarvis.ai.orchestrator.ToolExecutor.ToolResult
+}
+
 class MissionRunner(
     private val toolExecutor: ToolExecutor? = null,
+    private val toolPort: ToolExecutionPort? = null,
     private val deviceToolExecutor: DeviceToolExecutor? = null,
     private val memory: MemoryEngine? = null,
     private val limits: AgentLimits = AgentLimits(),
@@ -158,9 +171,11 @@ class MissionRunner(
                         StepOutcome.Failure(r.reason, recoverable = false)
                 }
             } else {
-                val exec = toolExecutor
-                    ?: return StepOutcome.Failure("Tool subsystem unavailable", recoverable = false)
-                val result = exec.executeTool(step.toolName, step.parameters, userConfirmed)
+                val result = when {
+                    toolPort != null -> toolPort.execute(step.toolName, step.parameters, userConfirmed)
+                    toolExecutor != null -> toolExecutor.executeTool(step.toolName, step.parameters, userConfirmed)
+                    else -> return StepOutcome.Failure("Tool subsystem unavailable", recoverable = false)
+                }
                 when (result) {
                     is ToolExecutor.ToolResult.Success -> {
                         outputs[outputs.size] = result.result
