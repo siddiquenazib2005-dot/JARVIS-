@@ -32,7 +32,9 @@ import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.LottieConstants
 import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieComposition
-import com.jarvis.ai.R
+import com.jarvis.ai.avatarIdleSpec
+import com.jarvis.ai.avatarListeningSpec
+import com.jarvis.ai.avatarTalkingSpec
 import com.jarvis.ai.ui.theme.extended
 
 /**
@@ -88,9 +90,9 @@ fun AvatarView(
     }
 
     val spec = when (state) {
-        AvatarState.IDLE -> LottieCompositionSpec.RawRes(R.raw.aurix_idle)
-        AvatarState.LISTENING -> LottieCompositionSpec.RawRes(R.raw.aurix_listening)
-        AvatarState.TALKING -> LottieCompositionSpec.RawRes(R.raw.aurix_talking)
+        AvatarState.IDLE -> avatarIdleSpec()
+        AvatarState.LISTENING -> avatarListeningSpec()
+        AvatarState.TALKING -> avatarTalkingSpec()
     }
 
     val composition by rememberLottieComposition(spec)
