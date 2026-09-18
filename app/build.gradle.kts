@@ -102,10 +102,6 @@ dependencies {
     // Google Gemini SDK (vision / text generation via core.router)
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
-    // Kotlin Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
-
     // Real SMTP email sending (MYRA parity). The android-* artifacts are the
     // Android-safe repackaging of JavaMail; the desktop com.sun.mail:javax.mail
     // artifact does NOT work here because it depends on java.beans.

@@ -22,7 +22,13 @@ object FailureClassifier {
 
     /** Classifies a throwable message (and optional http status) into a category. */
     fun classify(message: String?, httpStatus: Int? = null): FailureCategory {
-        httpStatus?.let { return fromStatus(it) }
+        // An HTTP status is authoritative only when it maps to a known category.
+        // Unmapped codes (400/404/...) must NOT short-circuit: they previously
+        // returned UNKNOWN and discarded a message that carried the real signal.
+        httpStatus?.let { status ->
+            fromStatus(status).takeUnless { it == FailureCategory.UNKNOWN }
+                ?.let { return it }
+        }
         val m = message?.lowercase().orEmpty()
         if (m.isEmpty()) return FailureCategory.UNKNOWN
         return when {

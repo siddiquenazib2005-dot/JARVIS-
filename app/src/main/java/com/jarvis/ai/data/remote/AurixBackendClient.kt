@@ -92,11 +92,13 @@ class AurixBackendClient(
     private val appToken: String
 ) {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(180, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .build()
+    /**
+     * Shared connection pool/dispatcher. OkHttpClient owns long-lived threads and
+     * sockets, so a per-request instance (this client is rebuilt on every chat turn)
+     * would churn them needlessly. A single process-wide instance keeps keep-alives
+     * warm and memory flat.
+     */
+    private val client: OkHttpClient get() = SHARED_CLIENT
 
     /** Streams a reply from `POST /v1/chat/stream`. */
     fun streamChat(
@@ -222,5 +224,13 @@ class AurixBackendClient(
         429 -> "Backend is rate limited (HTTP 429), sir."
         502, 503 -> "Backend has no working provider right now (HTTP $code), sir."
         else -> "Backend fault (HTTP $code), sir."
+    }
+
+    companion object {
+        private val SHARED_CLIENT: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(180, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .build()
     }
 }

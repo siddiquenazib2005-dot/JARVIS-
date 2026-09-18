@@ -31,6 +31,14 @@ class WaitEngine(
                     message = "Timed out waiting for '$text'"
                 )
             }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            // withTimeout fired — the expected timeout path, not an error.
+            A11yResult.failure(A11yErrorCode.TIMEOUT, action = "wait_for_text", target = text)
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            // The caller cancelled us (stopGeneration / AgentCore.cancelTask). The old
+            // generic `catch (Exception)` swallowed this and returned a fake TIMEOUT,
+            // which kept the device-control loop running after it was meant to stop.
+            throw ce
         } catch (e: Exception) {
             A11yResult.failure(A11yErrorCode.TIMEOUT, action = "wait_for_text", target = text)
         }

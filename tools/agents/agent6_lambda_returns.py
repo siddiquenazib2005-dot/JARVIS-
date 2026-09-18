@@ -12,7 +12,18 @@ a `when` missing a branch.
 """
 import os, re
 
-PKG = "/data/AURIX-Android-AI/app/src/main/java/com/jarvis/ai"
+# Resolve the app tree from this script's own location so the agent works from
+# any checkout (CI included); override with ROOT=/path if the layout differs.
+ROOT = os.environ.get(
+    "ROOT",
+    os.path.normpath(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "..", "app", "src", "main", "java",
+        )
+    ),
+)
+PKG = os.path.join(ROOT, "com/jarvis/ai")
 
 def lambda_body(text, start):
     """Return the source of the lambda that starts at the '{' at/after start."""
@@ -60,6 +71,11 @@ for dirpath, _dirs, files in os.walk(PKG):
             last = stmts[-1]
             for pattern, why in BAD_LAST:
                 if pattern.search(last):
+                    # The "if without else" heuristic must not fire when an else
+                    # branch IS present (multi-line if/else trips the line-anchored
+                    # regex). Skip the pattern and keep checking the others.
+                    if "else" in last and why.startswith("if without else"):
+                        continue
                     findings.append((rel, line, why + " :: " + last[:80]))
                     break
         # also: joinToString with a positional separator that is not a string

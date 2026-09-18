@@ -64,12 +64,20 @@ class ScreenshotCapture(private val context: Context) {
     }
 
     suspend fun capture(): Bitmap? = withContext(kotlinx.coroutines.Dispatchers.IO) {
-        if (!isCapturing || imageReader == null) return@withContext null
+        if (!isCapturing) return@withContext null
 
-        val surface = imageReader?.surface ?: return@withContext null
-        
+        val reader = imageReader ?: return@withContext null
+        val surface = reader.surface ?: return@withContext null
+        val projection = mediaProjection ?: return@withContext null
+
+        // A VirtualDisplay renders asynchronously and holds the ImageReader's
+        // surface alive until released. Creating one per capture and releasing it
+        // in the finally below keeps repeated captures from leaking displays
+        // (each unreleased display would otherwise pin memory until the process dies).
+        var display: android.hardware.display.VirtualDisplay? = null
+        var image: android.media.Image? = null
         try {
-            mediaProjection?.createVirtualDisplay(
+            display = projection.createVirtualDisplay(
                 "Screenshot",
                 displayWidth,
                 displayHeight,
@@ -80,31 +88,46 @@ class ScreenshotCapture(private val context: Context) {
                 handler
             )
 
-            val image = imageReader?.acquireLatestImage()
-            return@withContext image?.let { img ->
-                val planes = img.planes
-                val buffer: ByteBuffer = planes[0].buffer
-                val pixelStride = planes[0].pixelStride
-                val rowStride = planes[0].rowStride
-                val rowPadding = rowStride - pixelStride * img.width
+            // The first frame is NOT available the instant createVirtualDisplay
+            // returns; polling briefly avoids a chronic null capture that the old
+            // single acquireLatestImage() call produced on fast returns.
+            val deadline = System.currentTimeMillis() + CAPTURE_WAIT_MS
+            while (image == null && System.currentTimeMillis() < deadline) {
+                image = reader.acquireLatestImage()
+                if (image == null) kotlinx.coroutines.delay(FRAME_POLL_MS)
+            }
 
-                val bitmap = Bitmap.createBitmap(
-                    img.width + rowPadding / pixelStride,
-                    img.height,
-                    Bitmap.Config.ARGB_8888
-                )
-                bitmap.copyPixelsFromBuffer(buffer)
-                img.close()
+            val img = image ?: return@withContext null
+            val planes = img.planes
+            val buffer: ByteBuffer = planes[0].buffer
+            val pixelStride = planes[0].pixelStride
+            val rowStride = planes[0].rowStride
+            val width = img.width
+            val height = img.height
+            val rowPadding = rowStride - pixelStride * width
 
-                if (rowPadding > 0) {
-                    Bitmap.createBitmap(bitmap, 0, 0, img.width, img.height)
-                } else {
-                    bitmap
-                }
+            val bitmap = Bitmap.createBitmap(
+                width + rowPadding / pixelStride,
+                height,
+                Bitmap.Config.ARGB_8888
+            )
+            bitmap.copyPixelsFromBuffer(buffer)
+            // Dimensions were captured above on purpose: the Image must be closed
+            // before we return, and reading fields after close is undefined.
+            image?.close()
+            image = null
+
+            if (rowPadding > 0) {
+                Bitmap.createBitmap(bitmap, 0, 0, width, height)
+            } else {
+                bitmap
             }
         } catch (e: Exception) {
             e.printStackTrace()
             return@withContext null
+        } finally {
+            image?.close()
+            display?.release()
         }
     }
 
@@ -120,6 +143,11 @@ class ScreenshotCapture(private val context: Context) {
     }
 
     companion object {
+        /** How long to wait for the virtual display to produce its first frame. */
+        private const val CAPTURE_WAIT_MS = 1500L
+        /** Poll interval while waiting for that first frame. */
+        private const val FRAME_POLL_MS = 50L
+
         @Volatile
         private var instance: ScreenshotCapture? = null
 

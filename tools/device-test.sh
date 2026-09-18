@@ -27,11 +27,15 @@
 set -u
 
 # ---- configuration -------------------------------------------------------
-PKG="com.jarvis.ai"
-SERVICE="$PKG/.accessibility.JarvisAccessibilityService"
-ACTIVITY="$PKG/.MainActivity"
+# The INSTALLED package is the applicationId (com.aurix.ai.debug). Component
+# classes keep their com.jarvis.ai namespace (see app/build.gradle.kts), so
+# components are spelled <applicationId>/<fully-qualified class name>.
+PKG="com.aurix.ai.debug"
+SERVICE="$PKG/com.jarvis.ai.accessibility.JarvisAccessibilityService"
+ACTIVITY="$PKG/com.jarvis.ai.MainActivity"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APK="$REPO_ROOT/app/build/outputs/apk/debug/app-debug.apk"
+INSTALL_LOG="$REPO_ROOT/device-install.log"   # /tmp is not writable from Termux
 ADB_PORT="${ADB_PORT:-5555}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-/sdcard/Download/jarvis-test}"
 BUILD="${BUILD:-0}"          # set BUILD=1 (or pass --build) to run gradle first
@@ -90,10 +94,10 @@ fi
 
 # ---- 3. install ----------------------------------------------------------
 log "Installing $APK"
-if $ADB install -r -t "$APK" 2>&1 | tee /tmp/jarvis_install.log | grep -qiE 'success|already'; then
+if $ADB install -r -t "$APK" 2>&1 | tee "$INSTALL_LOG" | grep -qiE 'success|already'; then
   ok "APK installed"
 else
-  bad "APK install failed"; cat /tmp/jarvis_install.log
+  bad "APK install failed"; cat "$INSTALL_LOG" 2>/dev/null
 fi
 
 # ---- 4. launch -----------------------------------------------------------

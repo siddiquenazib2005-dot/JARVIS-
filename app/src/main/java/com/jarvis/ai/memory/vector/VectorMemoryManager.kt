@@ -62,6 +62,16 @@ class VectorMemoryManager(
     /** storeId → epoch-ms until which the store is skipped after a failure. */
     private val cooldowns = ConcurrentHashMap<String, Long>()
 
+    /**
+     * Local stores are never put on cooldown: a cooldown exists to stop hammering a
+     * sick REMOTE service. Benching the on-device store would leave the user with no
+     * persistent memory at all for a minute — the opposite of the intent.
+     * NOTE: every write path must use this helper, not a literal "inmemory" check;
+     * remember()/updateMemory() previously cooled the on-device store down anyway.
+     */
+    private fun isLocal(store: VectorStore): Boolean =
+        store.storeId == "inmemory" || store.storeId == "on-device"
+
     /** Ordered candidate list honouring configuration and current cooldowns. */
     internal fun candidateStores(): List<VectorStore> {
         val candidates = mutableListOf<Pair<String, VectorStore>>()
@@ -96,11 +106,7 @@ class VectorMemoryManager(
                 throw e
             } catch (e: Exception) {
                 lastError = e
-                // Local stores are never put on cooldown: a cooldown exists to
-                // stop hammering a sick REMOTE service. Benching the on-device
-                // store would leave the user with no memory at all for a
-                // minute, which is the opposite of the intent.
-                if (store.storeId != "inmemory" && store.storeId != "on-device") {
+                if (!isLocal(store)) {
                     cooldowns[store.storeId] = now() + config.storeCooldownMs
                 }
             }
@@ -168,7 +174,7 @@ class VectorMemoryManager(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: Exception) {
-                if (candidate.storeId != "inmemory") cooldowns[candidate.storeId] = now() + config.storeCooldownMs
+                if (!isLocal(candidate)) cooldowns[candidate.storeId] = now() + config.storeCooldownMs
             }
         }
         if (!persisted) {
@@ -248,7 +254,7 @@ class VectorMemoryManager(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: Exception) {
-                if (store.storeId != "inmemory") cooldowns[store.storeId] = now() + config.storeCooldownMs
+                if (!isLocal(store)) cooldowns[store.storeId] = now() + config.storeCooldownMs
             }
         }
         ok

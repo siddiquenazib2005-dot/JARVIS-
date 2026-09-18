@@ -37,6 +37,8 @@ data class UiState(
     val latency: LatencyInfo = LatencyInfo(),
     val isListening: Boolean = false,
     val isSpeaking: Boolean = false,
+    /** True while a tool or device action is executing on screen. */
+    val isActing: Boolean = false,
     val notice: String? = null,
     /** True while a tool is awaiting explicit user confirmation (SEND confirms it). */
     val hasPendingConfirmation: Boolean = false,

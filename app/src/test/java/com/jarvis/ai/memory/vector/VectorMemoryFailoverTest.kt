@@ -16,7 +16,7 @@ import java.io.IOException
  * so persistence must land in the local store and later calls must skip
  * the cooled-down rements entirely.
  */
-class ResilientVectorStoreTest {
+class VectorMemoryFailoverTest {
 
     private class FailingTransport : HttpTransport {
         var calls = 0

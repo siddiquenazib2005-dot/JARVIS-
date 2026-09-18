@@ -17,6 +17,19 @@ import java.io.IOException
 /** Streamed route output: incremental deltas followed by exactly one terminal report. */
 sealed class RouteChunk {
     data class Delta(val text: String) : RouteChunk()
+
+    /**
+     * A provider failed mid-stream after [discardChars] characters had already been
+     * streamed to the consumer. The consumer must drop exactly that many characters
+     * of what it has accumulated from the current reply before the failover
+     * provider's output arrives, otherwise the dead partial text is stitched onto
+     * the front of the new reply (garbled/duplicated output).
+     *
+     * Emitted only when a streaming attempt actually leaked text, so the success
+     * path costs nothing extra.
+     */
+    data class Rewind(val discardChars: Int) : RouteChunk()
+
     data class Finished(val report: ExecutionReport) : RouteChunk()
 }
 
@@ -87,26 +100,30 @@ class ProviderRouter(
                 }
                 val (slot, secret) = picked
                 val attemptStart = now()
-                var attemptBuffer = StringBuilder()
+                // Chars already streamed to the consumer during THIS attempt. If the
+                // attempt dies mid-stream we must tell the consumer exactly how much
+                // leaked text to discard before the next provider starts streaming.
+                var attemptEmitted = 0
                 try {
                     val provider = llmFactory(cfg, secret, model)
                     var produced = false
                     if (request.stream) {
-                        // Buffer streamed deltas locally; only COMMIT them to the UI
-                        // once this provider finishes successfully. If it fails mid-stream
-                        // (timeout/rate-limit) and we rotate to another provider, we must
-                        // not have already leaked the partial reply (garbled/duplicated text).
+                        // Stream deltas live so the reply types out as it arrives.
+                        // The no-garbled-text guarantee is preserved by the matching
+                        // Rewind in the catch branch below: if this provider fails
+                        // after leaking a partial reply, the consumer drops exactly
+                        // that prefix before the failover's output is appended.
                         provider.streamChat(request.history, request.systemPrompt, model)
                             .collect { delta ->
                                 if (delta.isNotBlank()) {
                                     produced = true
-                                    attemptBuffer.append(delta)
+                                    attemptEmitted += delta.length
+                                    emit(RouteChunk.Delta(delta))
                                 }
                             }
                         if (!produced) throw IOException("empty stream")
                         health.recordSuccess(cfg.providerId, now() - attemptStart)
                         keys.markSuccess(slot)
-                        emit(RouteChunk.Delta(attemptBuffer.toString()))
                     } else {
                         val text = provider.chatOnce(request.history, request.systemPrompt, model)
                         if (text.isBlank()) throw IOException("empty content")
@@ -120,8 +137,13 @@ class ProviderRouter(
                 } catch (ce: CancellationException) {
                     throw ce
                 } catch (e: Exception) {
-                    // Discard any partial buffer from this attempt before rotating.
-                    attemptBuffer.clear()
+                    // A mid-stream failure leaked a partial reply to the consumer.
+                    // Instruct it to discard exactly that prefix so the next
+                    // attempt's output starts from a clean slate.
+                    if (attemptEmitted > 0) {
+                        emit(RouteChunk.Rewind(attemptEmitted))
+                        attemptEmitted = 0
+                    }
                     val category = FailureClassifier.classify(e.message)
                     keys.markFailure(slot, category, now())
                     health.recordFailure(cfg.providerId, category)

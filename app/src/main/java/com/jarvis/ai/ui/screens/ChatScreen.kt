@@ -168,12 +168,13 @@ fun ChatScreen(
     // Item 7: keep the floating bubble's animation in sync with the chat state.
     // Publishing is safe even when the bubble is not running: the bus just
     // remembers the last state and the bubble picks it up when it appears.
-    LaunchedEffect(state.isListening, state.isSpeaking, state.isLoading) {
+    LaunchedEffect(state.isListening, state.isSpeaking, state.isLoading, state.isActing) {
         com.jarvis.ai.overlay.AvatarStateBus.set(
             com.jarvis.ai.overlay.AvatarState.from(
                 isListening = state.isListening,
                 isSpeaking = state.isSpeaking,
-                isLoading = state.isLoading
+                isLoading = state.isLoading,
+                isActing = state.isActing
             )
         )
     }

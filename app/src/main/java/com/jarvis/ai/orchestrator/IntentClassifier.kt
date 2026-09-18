@@ -53,7 +53,7 @@ object IntentClassifier {
     // Hinglish phrasings, since Levinho's voice input is Hindi-English mixed.
     // ------------------------------------------------------------------
 
-    private val MESSAGING_TRIGGER_WORDS = listOf("sms", "whatsapp", "text ", "message ")
+    private val MESSAGING_TRIGGER_WORDS = listOf("sms", "whatsapp", "text ", "message ", "bata do", "bhej do")
 
     /** Regexes tried in order; first match wins. Groups vary per pattern, handled in parseMessagingRequest. */
     private val MSG_PATTERN_TO = Regex("""^(?:send\s+)?(sms|whatsapp)\s+to\s+(\S+)\s+(.+)$""")
@@ -62,6 +62,14 @@ object IntentClassifier {
     private val MSG_PATTERN_MESSAGE = Regex("""^message\s+(\S+)\s+(?:saying\s+)?(.+)$""")
     /** Hinglish: "NAZIB ko whatsapp karo hii" / "ritik ko sms bhejo call me" */
     private val MSG_PATTERN_KO = Regex("""^(\S+)\s+ko\s+(sms|whatsapp)\s+(?:karo\s+|bhejo\s+|bolo\s+)?(.+)$""")
+    /**
+     * Hinglish without a stated channel: "nazib ko bata do main late hu" /
+     * "ritik ko bhej do ..." — the speaker means a message. Falls back to sms
+     * because no channel was named; the tool layer still asks before sending.
+     * Send verbs must stay anchored to the end of the command, otherwise a
+     * trailing "karo" would swallow the message text.
+     */
+    private val MSG_PATTERN_KO_PLAIN = Regex("""^(\S+)\s+ko\s+(?:bata\s+do|bhej\s+do|bol\s+do|batao|bhejo)\s+(.+)$""")
 
     // ------------------------------------------------------------------
     // Phone calls
@@ -265,6 +273,12 @@ object IntentClassifier {
         MSG_PATTERN_KO.find(text)?.let { m ->
             val (contact, type, message) = m.destructured
             return Triple(type, contact, message.trim())
+        }
+        MSG_PATTERN_KO_PLAIN.find(text)?.let { m ->
+            val (contact, message) = m.destructured
+            // Channel was not named, so default to SMS. The user still gets an
+            // explicit confirmation (SEND_SMS is needsConfirmation = true).
+            return Triple("sms", contact, message.trim())
         }
         MSG_PATTERN_TEXT.find(text)?.let { m ->
             val (contact, message) = m.destructured

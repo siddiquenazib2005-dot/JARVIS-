@@ -10,7 +10,17 @@ v1 false positives fixed:
 """
 import os, re, sys
 
-ROOT = "/data/AURIX-Android-AI/app/src/main/java"
+# Resolve the app tree from this script's own location so the agent works from
+# any checkout (CI included); override with ROOT=/path if the layout differs.
+ROOT = os.environ.get(
+    "ROOT",
+    os.path.normpath(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "..", "app", "src", "main", "java",
+        )
+    ),
+)
 
 def strip_noise(src):
     src = re.sub(r'""".*?"""', '""', src, flags=re.S)

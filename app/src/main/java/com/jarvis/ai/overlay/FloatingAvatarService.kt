@@ -418,6 +418,7 @@ private class AurixCompanionView(
             AvatarState.LISTENING -> 1.00f
             AvatarState.THINKING -> 0.72f
             AvatarState.SPEAKING -> 0.90f
+            AvatarState.ACTING -> 0.82f
         }
         val wave = (sin(phase * Math.PI * 2).toFloat() + 1f) / 2f
         glow.color = state.outerColor
