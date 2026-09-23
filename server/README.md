@@ -23,10 +23,13 @@ Node 18+ (only `express` and `cors`), so it runs on any free host.
 ```bash
 cd server
 npm install
-cp env.example.txt .env        # then fill in at least one API key
+cp .env.example .env         # then fill in AURIX_APP_TOKEN + at least one API key
 export $(grep -v '^#' .env | xargs)
 npm start
 ```
+
+Without `AURIX_APP_TOKEN`, `/v1/*` returns **503** (set `AURIX_ALLOW_ANON=true`
+only for local experiments).
 
 Verify:
 
@@ -76,4 +79,5 @@ either way.
 | GET/POST/DELETE | `/v1/facts` | Durable memory facts |
 
 Set `AURIX_APP_TOKEN` to require `Authorization: Bearer <token>` on all `/v1`
-routes.
+routes. On hosts where the token is unset, `/v1` stays closed (503) unless
+`AURIX_ALLOW_ANON=true` is set for local development.

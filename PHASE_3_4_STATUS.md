@@ -58,5 +58,5 @@ degrades to a helpful sentence instead of crashing when denied.
 
 ## Not included
 
-- **PC Connect / desktop bridge** — removed on request (`bridge/SocketServer.kt`
-  deleted, `pcBridgeInfo` action and its command route removed).
+- **PC Connect / desktop bridge** — removed on request. `bridge/SocketServer.kt` is gone
+  from the tree; `pcBridgeInfo` action and its command route were removed earlier.

@@ -16,7 +16,8 @@
  *   DELETE /v1/facts           forget a fact
  *
  * Auth: if AURIX_APP_TOKEN is set, every /v1 request must send
- * `Authorization: Bearer <token>`. Provider keys never leave the server.
+ * `Authorization: Bearer <token>`. If the token is unset, /v1 returns 503
+ * unless AURIX_ALLOW_ANON=true (local only). Provider keys never leave the server.
  */
 
 import express from 'express'
@@ -39,6 +40,12 @@ import {
 const app = express()
 const PORT = process.env.PORT || 8080
 const APP_TOKEN = process.env.AURIX_APP_TOKEN || ''
+// Local/dev may run open; production must set AURIX_APP_TOKEN unless this is
+// explicitly set to "true"/"1". Default: token required when unset in prod-like hosts.
+const ALLOW_ANON = ['1', 'true', 'yes'].includes(
+	String(process.env.AURIX_ALLOW_ANON || '').toLowerCase()
+)
+const authRequired = Boolean(APP_TOKEN) || !ALLOW_ANON
 
 const DEFAULT_SYSTEM =
 	'You are AURIX, a concise and capable Android assistant. ' +
@@ -49,13 +56,22 @@ app.use(cors())
 app.use(express.json({ limit: process.env.AURIX_JSON_LIMIT || '2mb' }))
 
 const buckets = new Map()
+const RATE_WINDOW_MS = 60_000
+const RATE_SWEEP_MS = 5 * 60_000
+
+function sweepRateBuckets(now) {
+	for (const [key, b] of buckets) {
+		if (now - b.start > RATE_WINDOW_MS) buckets.delete(key)
+	}
+}
+setInterval(() => sweepRateBuckets(Date.now()), RATE_SWEEP_MS).unref?.()
+
 app.use('/v1', (req, res, next) => {
 	const limit = Number(process.env.AURIX_RATE_LIMIT || 120)
 	const key = req.ip || req.headers['x-forwarded-for'] || 'local'
 	const now = Date.now()
-	const windowMs = 60_000
 	const b = buckets.get(key) || { start: now, count: 0 }
-	if (now - b.start > windowMs) { b.start = now; b.count = 0 }
+	if (now - b.start > RATE_WINDOW_MS) { b.start = now; b.count = 0 }
 	b.count += 1
 	buckets.set(key, b)
 	if (b.count > limit) return res.status(429).json({ error: { message: 'Rate limit exceeded' } })
@@ -74,7 +90,15 @@ function safeCompare(a, b) {
 }
 
 app.use('/v1', (req, res, next) => {
-	if (!APP_TOKEN) return next()
+	if (!APP_TOKEN) {
+		if (ALLOW_ANON) return next()
+		return res.status(503).json({
+			error: {
+				message:
+					'Server auth not configured. Set AURIX_APP_TOKEN (or AURIX_ALLOW_ANON=true for local dev).',
+			},
+		})
+	}
 	const header = req.headers.authorization || ''
 	if (safeCompare(header, 'Bearer ' + APP_TOKEN)) return next()
 	return res.status(401).json({ error: { message: 'Invalid app token' } })
@@ -85,7 +109,8 @@ app.get('/', (req, res) => {
 		service: 'aurix-backend',
 		version: '1.0.0',
 		configuredProviders: configuredProviders().map((p) => p.id),
-		authRequired: Boolean(APP_TOKEN),
+		authRequired,
+		anonAllowed: !APP_TOKEN && ALLOW_ANON,
 	})
 })
 
@@ -280,4 +305,13 @@ app.listen(PORT, () => {
 			? 'Configured providers: ' + ready.join(', ')
 			: 'WARNING: no provider keys configured yet'
 	)
+	if (APP_TOKEN) {
+		console.log('Auth: AURIX_APP_TOKEN required on /v1/*')
+	} else if (ALLOW_ANON) {
+		console.warn('WARNING: AURIX_ALLOW_ANON=true — /v1/* is open. Use only on localhost.')
+	} else {
+		console.warn(
+			'WARNING: AURIX_APP_TOKEN unset — /v1/* returns 503 until a token is configured.'
+		)
+	}
 })

@@ -1,6 +1,6 @@
 # AURIX — Phase 1 status
 
-**Version:** 1.3 (versionCode 4) · applicationId `com.aurix.ai`
+**Version:** see `app/build.gradle.kts` (source of truth) · applicationId `com.aurix.ai.debug` (debug) · namespace `com.jarvis.ai`
 
 ## Phase 1 — 100% complete
 

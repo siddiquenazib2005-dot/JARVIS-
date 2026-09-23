@@ -50,9 +50,12 @@ applies: a pinned model is forwarded to the backend as `provider` + `model`.
 ## Verify
 
 ```bash
-cd server && npm install && npm start          # terminal 1
-npm run health                                  # terminal 2
+cd server && npm install && AURIX_ALLOW_ANON=true npm start   # terminal 1 (local only)
+npm run health                                                  # terminal 2
 ```
+
+Production must set `AURIX_APP_TOKEN`; without it `/v1/*` returns 503 unless
+`AURIX_ALLOW_ANON=true` (local only).
 
 `scripts/smoke.js` checks the banner, health, models and a real chat
 round-trip, and exits non-zero on failure.

@@ -16,6 +16,7 @@ services:
         value: /tmp/aurix-data
       - key: AURIX_APP_TOKEN
         sync: false
+      # Do NOT set AURIX_ALLOW_ANON on public hosts — /v1 must stay token-gated.
       - key: GROQ_API_KEY
         sync: false
       - key: CEREBRAS_API_KEY

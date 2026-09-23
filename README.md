@@ -27,7 +27,7 @@ AURIX
 │       │   ├── AndroidManifest.xml
 │       │   ├── res/                     # Compose-themed resources, a11y service config
 │       │   └── java/com/jarvis/ai/
-│       │       ├── MainActivity.kt      # Compose entry point → ChatScreen
+│       │       ├── MainActivity.kt      # Compose entry → Home / Chat
 │       │       ├── accessibility/       # AccessibilityService + UI automation engines
 │       │       │   ├── JarvisAccessibilityService.kt
 │       │       │   ├── A11yResult.kt    # Structured outcomes + error codes
@@ -37,12 +37,12 @@ AURIX
 │       │       │   ├── WaitEngine.kt, TextMatcher.kt, NodeValidator.kt
 │       │       │   ├── RiskClassifier.kt, AccessibilityLogger.kt
 │       │       ├── agent/               # AgentCore: LLM→action-JSON→execution loop
-│       │       ├── bridge/              # SocketServer (external integrations)
-│       │       ├── core/                # EventBus + event types
+│       │       ├── core/                # EventBus + JarvisRuntime composition root
 │       │       ├── data/                # Repository, models, SSE parsing, offline engine
 │       │       ├── health/              # Health check subsystems
 │       │       ├── intelligence/        # TaskRouter: request → reasoning plan
 │       │       ├── memory/              # Vector memory (local + Qdrant + Pinecone)
+│       │       ├── missions/            # MissionEngine (saved offline routines)
 │       │       ├── orchestrator/        # MasterOrchestrator + ToolExecutor + ToolRegistry
 │       │       │   ├── MasterOrchestrator.kt   # Single pipeline: UI → intelligence → tools
 │       │       │   ├── IntentClassifier.kt     # Intent routing (call/chat/automation/...)
@@ -59,13 +59,15 @@ AURIX
 │       │       ├── service/             # Foreground/background services
 │       │       ├── system/              # SystemAwareness (device state)
 │       │       ├── ui/                  # Compose screens, components, theme
-│       │       ├── viewmodel/           # ChatViewModel
+│       │       ├── viewmodel/           # JarvisViewModel
 │       │       └── vision/              # Screenshot capture + OCR (ML Kit)
-│       └── test/                        # JVM unit tests (incl. framework-agnostic a11y tests)
+│   └── test/                        # JVM unit tests (incl. framework-agnostic a11y tests)
 │
-├── gradle/libs.versions.toml            # Version catalog
+├── server/                          # Node backend (multi-provider chat + memory)
+├── gradle/libs.versions.toml        # Version catalog
+├── gradlew / gradlew.bat / gradle/wrapper/
 ├── build.gradle.kts / settings.gradle.kts
-└── tools/                               # Device-testing helper scripts
+└── tools/                           # Static-analysis agents + device-test.sh
 ```
 
 ### Data flow
@@ -87,7 +89,7 @@ All model traffic goes through ProviderRouter only — never direct client→bac
 Requirements: JDK 17, Android SDK (compileSdk 35, minSdk 26), Android Gradle Plugin 8.7.3.
 
 ```bash
-# Debug APK
+# Debug APK (official Gradle wrapper)
 ./gradlew :app:assembleDebug
 # Output: app/build/outputs/apk/debug/app-debug.apk
 

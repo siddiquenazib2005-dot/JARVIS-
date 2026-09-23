@@ -5,6 +5,9 @@
  *
  * Checks the banner, health, models, and (when a provider key is configured)
  * a real chat round-trip. Exits non-zero on failure so CI can gate on it.
+ *
+ * Local tip: start with AURIX_ALLOW_ANON=true, or pass the token as argv[2] /
+ * AURIX_APP_TOKEN.
  */
 
 const base = (process.argv[2] || 'http://localhost:8080').replace(/\/$/, '')

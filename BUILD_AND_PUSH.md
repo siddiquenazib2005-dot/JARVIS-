@@ -54,6 +54,7 @@ gradle :app:assembleDebug
 
 ## Notes
 
-- Package name remains `com.jarvis.ai` for compatibility with the existing codebase.
-- Visible app branding is now **AURIX**.
+- **applicationId** is `com.aurix.ai.debug` (AURIX brand); Kotlin **namespace** stays `com.jarvis.ai` so sources do not move.
+- Visible app branding is **AURIX**.
 - Existing class names like `JarvisViewModel` remain unchanged to avoid risky mass refactors.
+- Version / versionCode: always trust `app/build.gradle.kts` over older phase notes.

@@ -3,7 +3,7 @@
 AURIX is an original red/black futuristic Android AI companion inspired by the user's reference style. Target: voice assistant + chat + phone control + screen automation + missions.
 
 ## P0 Build
-- Restore real Gradle wrapper.
+- ~~Restore real Gradle wrapper.~~ ✅ `gradle-wrapper.jar` + official `gradlew` / `gradlew.bat`.
 - Build `:app:assembleDebug`.
 - Fix compile errors.
 
