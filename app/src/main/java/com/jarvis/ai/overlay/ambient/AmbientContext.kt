@@ -1,6 +1,7 @@
 package com.jarvis.ai.overlay.ambient
 
 import com.jarvis.ai.overlay.AvatarState
+import com.jarvis.ai.overlay.AvatarStateBus
 
 /**
  * Phase E: lightweight screen-context awareness for the ambient entity.
