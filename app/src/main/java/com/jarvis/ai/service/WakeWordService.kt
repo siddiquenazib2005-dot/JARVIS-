@@ -276,9 +276,12 @@ class WakeWordService : Service() {
         internal fun cooldownActive(nowMs: Long, lastActivationAtMs: Long): Boolean =
             nowMs - lastActivationAtMs < ACTIVATION_COOLDOWN_MS
 
-        /** The phrase lives in WakeWordConfig.DEFAULT; never duplicated here. */
-        private val wakeNotificationText: String
-            get() = "Say \"${WakeWordConfig.DEFAULT.phrase.lowercase()}\" to wake the assistant"
+        /**
+         * The configured phrase is never rendered in UI (directive: the
+         * temporary phrase must stay invisible; the wake word is something
+         * the owner says, not reads).
+         */
+        private const val wakeNotificationText = "Say the wake phrase to wake the assistant"
 
         /** Starts the listener. Safe to call repeatedly. */
         fun start(context: Context) {
