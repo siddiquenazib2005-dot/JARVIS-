@@ -387,8 +387,11 @@ private fun TriggerPicker(trigger: MissionTrigger, onChange: (MissionTrigger) ->
             Chip("Daily", trigger.type == MissionTriggerType.DAILY) {
                 onChange(trigger.copy(type = MissionTriggerType.DAILY))
             }
+            Chip("Once", trigger.type == MissionTriggerType.ONE_SHOT) {
+                onChange(trigger.copy(type = MissionTriggerType.ONE_SHOT))
+            }
         }
-        if (trigger.type == MissionTriggerType.DAILY) {
+        if (trigger.type == MissionTriggerType.DAILY || trigger.type == MissionTriggerType.ONE_SHOT) {
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TimeField(trigger.hour, 23) { onChange(trigger.copy(hour = it)) }

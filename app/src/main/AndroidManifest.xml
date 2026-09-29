@@ -12,6 +12,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- USE_EXACT_ALARM is auto-granted on Android 13+ so "remind me at 9" is
+         truly exact without a Settings trip. Restricted by Play policy, which
+         is fine for a sideloaded personal assistant. Older Androids ignore it
+         and fall back to SCHEDULE_EXACT_ALARM / inexact degradation. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.SEND_SMS" />
@@ -128,6 +135,24 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="com.aurix.ai.action.RUN_MISSION" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".missions.MissionBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".missions.ReminderReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.aurix.ai.action.FIRE_REMINDER" />
             </intent-filter>
         </receiver>
 

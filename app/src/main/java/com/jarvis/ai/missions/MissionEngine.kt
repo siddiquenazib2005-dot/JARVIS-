@@ -9,14 +9,17 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import com.jarvis.ai.diagnostics.DiagnosticsLog
 import kotlin.coroutines.coroutineContext
 
 /** One action in a saved mission. */
@@ -30,7 +33,7 @@ data class Mission(
 )
 
 enum class MissionRunState {
-    IDLE, RUNNING, PAUSED, COMPLETED, CANCELLED, FAILED
+    IDLE, RUNNING, PAUSED, RETRYING, COMPLETED, CANCELLED, FAILED
 }
 
 /** Process-wide, observable execution truth for the currently active mission. */
@@ -46,7 +49,8 @@ data class MissionProgress(
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     val isActive: Boolean
-        get() = state == MissionRunState.RUNNING || state == MissionRunState.PAUSED
+        get() = state == MissionRunState.RUNNING || state == MissionRunState.PAUSED ||
+            state == MissionRunState.RETRYING
 }
 
 /**
@@ -173,28 +177,35 @@ class MissionEngine(private val context: Context) {
 
             val job = runtimeScope.launch(start = CoroutineStart.LAZY) {
                 try {
-                    steps.forEachIndexed { index, step ->
-                        awaitResume()
-                        coroutineContext.ensureActive()
-                        updateProgress {
-                            it.copy(
-                                state = MissionRunState.RUNNING,
-                                completedSteps = index,
-                                currentAction = step.action,
-                                error = null,
-                                updatedAt = System.currentTimeMillis()
-                            )
-                        }
+                    // Bounded mission timeout: a hung step can never wedge the
+                    // engine forever. TimeoutCancellationException is caught
+                    // separately below so a timeout is a deterministic FAILED,
+                    // never a user-facing CANCELLED.
+                    withTimeout(MISSION_TIMEOUT_MS) {
+                        steps.forEachIndexed { index, step ->
+                            awaitResume()
+                            coroutineContext.ensureActive()
+                            updateProgress {
+                                it.copy(
+                                    state = MissionRunState.RUNNING,
+                                    completedSteps = index,
+                                    currentAction = step.action,
+                                    error = null,
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                            }
 
-                        val result = execute(step)
-                        updateProgress {
-                            it.copy(
-                                completedSteps = index + 1,
-                                lastResult = result,
-                                updatedAt = System.currentTimeMillis()
-                            )
+                            val result = executeWithBoundedRetry(step, index)
+                            updateProgress {
+                                it.copy(
+                                    state = MissionRunState.RUNNING,
+                                    completedSteps = index + 1,
+                                    lastResult = result,
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                            }
+                            if (index < steps.lastIndex) delay(STEP_DELAY_MS)
                         }
-                        if (index < steps.lastIndex) delay(STEP_DELAY_MS)
                     }
                     updateProgress {
                         it.copy(
@@ -203,6 +214,17 @@ class MissionEngine(private val context: Context) {
                             updatedAt = System.currentTimeMillis()
                         )
                     }
+                    DiagnosticsLog.record("mission", "completed \"$name\"")
+                } catch (timeout: TimeoutCancellationException) {
+                    updateProgress {
+                        it.copy(
+                            state = MissionRunState.FAILED,
+                            currentAction = null,
+                            error = "mission timed out after ${MISSION_TIMEOUT_MS / 1000}s",
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    DiagnosticsLog.record("mission", "failed: timed out after ${MISSION_TIMEOUT_MS / 1000}s")
                 } catch (cancelled: CancellationException) {
                     updateProgress {
                         it.copy(
@@ -211,6 +233,7 @@ class MissionEngine(private val context: Context) {
                             updatedAt = System.currentTimeMillis()
                         )
                     }
+                    DiagnosticsLog.record("mission", "cancelled \"${progress.value.missionName ?: "mission"}\"")
                     throw cancelled
                 } catch (error: Throwable) {
                     val reason = error.message?.takeIf { it.isNotBlank() }
@@ -223,6 +246,7 @@ class MissionEngine(private val context: Context) {
                             updatedAt = System.currentTimeMillis()
                         )
                     }
+                    DiagnosticsLog.record("mission", "failed: $reason")
                 } finally {
                     synchronized(runtimeLock) {
                         if (activeJob === coroutineContext[Job]) activeJob = null
@@ -233,6 +257,7 @@ class MissionEngine(private val context: Context) {
             activeJob = job
             job.start()
         }
+        DiagnosticsLog.record("mission", "started \"$name\" (${steps.size} steps)")
         return "Running mission \"$name\" — ${steps.size} steps, sir."
     }
 
@@ -287,6 +312,38 @@ class MissionEngine(private val context: Context) {
             ?: current.lastResult?.let { ". Last result: $it" }
             ?: "."
         return base + detail
+    }
+
+    /**
+     * Bounded retry for READ-ONLY verbs only. Steps with real-world side
+     * effects (calls, messages, taps, toggles) are never retried automatically:
+     * a retried "send whatsapp" would double-send. Transient UI/device
+     * failures on observable verbs are safe to re-attempt.
+     */
+    private suspend fun executeWithBoundedRetry(step: MissionStep, index: Int): String {
+        if (step.action.lowercase() !in RETRYABLE_VERBS) return execute(step)
+        var lastError: Throwable? = null
+        for (attempt in 0..MAX_STEP_RETRIES) {
+            try {
+                if (attempt > 0) {
+                    updateProgress {
+                        it.copy(
+                            state = MissionRunState.RETRYING,
+                            lastResult = "retry ${attempt}/${MAX_STEP_RETRIES}",
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    DiagnosticsLog.record("mission", "retried ${step.action} (attempt ${attempt + 1})")
+                    delay(RETRY_BACKOFF_MS * (1L shl (attempt - 1))) // 1s, 2s, 4s…
+                }
+                return execute(step)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                lastError = error
+            }
+        }
+        throw lastError ?: IllegalStateException("step ${step.action} failed")
     }
 
     private suspend fun awaitResume() {
@@ -422,6 +479,16 @@ class MissionEngine(private val context: Context) {
         private const val PAUSE_POLL_MS = 100L
         private const val MAX_STEPS = 50
         private const val MAX_WAIT_SECONDS = 300L
+
+        /** Hard ceiling for one mission run; timeouts land in FAILED. */
+        private const val MISSION_TIMEOUT_MS = 600_000L
+        private const val MAX_STEP_RETRIES = 2
+        private const val RETRY_BACKOFF_MS = 1_000L
+
+        /** Observable-only verbs that may be retried without side-effect risk. */
+        private val RETRYABLE_VERBS = setOf(
+            "battery", "device_status", "read_screen", "wait"
+        )
 
         private val runtimeLock = Any()
         private val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

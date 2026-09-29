@@ -1,11 +1,20 @@
 package com.jarvis.ai.tools
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
 import com.jarvis.ai.automation.ScreenAutomation
 import com.jarvis.ai.memory.MemoryEngine
 import com.jarvis.ai.memory.SecureKvStore
 import com.jarvis.ai.missions.Mission
 import com.jarvis.ai.missions.MissionEngine
+import com.jarvis.ai.missions.MissionTrigger
+import com.jarvis.ai.missions.MissionTriggerStore
+import com.jarvis.ai.missions.MissionTriggerType
+import com.jarvis.ai.missions.ReminderCommands
+import com.jarvis.ai.missions.ReminderStore
 import com.jarvis.ai.notifications.AurixNotificationListener
 import com.jarvis.ai.notifications.NotificationStore
 import com.jarvis.ai.overlay.FloatingAvatarService
@@ -150,6 +159,37 @@ class QuickCommandRouter(context: Context) {
         if (matches(text, "list missions", "my missions", "show missions", "missions list")) {
             return missions.describeAll()
         }
+        // Scheduled missions MUST be matched before the plain run-mission route,
+        // otherwise "every day at 7 am run mission x" would run immediately.
+        Regex("(?:every day|everyday|daily)\\s+at\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?\\s+(run\\s+mission\\s+.+)", RegexOption.IGNORE_CASE)
+            .find(text)?.let { m ->
+                val h12 = m.groupValues[1].toIntOrNull() ?: return@let
+                val min = m.groupValues[2].toIntOrNull() ?: 0
+                val meridiem = m.groupValues[3].lowercase()
+                val hour = when {
+                    meridiem == "pm" && h12 != 12 -> h12 + 12
+                    meridiem == "am" && h12 == 12 -> 0
+                    else -> h12
+                }
+                if (hour !in 0..23 || min !in 0..59) {
+                    return "That time does not look right, sir — try: every day at 7 am run mission good morning."
+                }
+                val missionName = m.groupValues[4]
+                    .replace(Regex("^run\\s+mission\\s+", RegexOption.IGNORE_CASE), "").trim()
+                val saved = missions.all().firstOrNull { it.name.equals(missionName, ignoreCase = true) }
+                    ?: missions.all().firstOrNull { it.name.contains(missionName, ignoreCase = true) }
+                    ?: return "I do not have a mission called \"$missionName\", sir. Create it first, then schedule it."
+                MissionTriggerStore.set(app, saved.name, MissionTrigger(MissionTriggerType.DAILY, hour, min))
+                return "Scheduled, sir — \"${saved.name}\" will run every day at %02d:%02d.".format(hour, min)
+            }
+        Regex("stop\\s+(?:the\\s+)?(?:daily\\s+)?schedule\\s+(?:for\\s+)?(.+)", RegexOption.IGNORE_CASE)
+            .find(text)?.let { m ->
+                val name = m.groupValues[1].trim()
+                val saved = missions.all().firstOrNull { it.name.contains(name, ignoreCase = true) }
+                    ?: return "I could not find that mission, sir."
+                MissionTriggerStore.clear(app, saved.name)
+                return "Schedule removed for \"${saved.name}\", sir."
+            }
         afterAny(text, "run mission ", "start mission ", "mission run ")?.let {
             return missions.run(it)
         }
@@ -170,6 +210,37 @@ class QuickCommandRouter(context: Context) {
         if (text.contains(" then ") && text.split(" then ").size in 2..6) {
             val steps = text.split(" then ")
             if (steps.all { missions.parseStep(it) != null }) return missions.runChain(steps)
+        }
+
+        // ---------- Reminders ----------
+        if (matches(text, "my reminders", "list reminders", "show reminders", "pending reminders")) {
+            val all = ReminderStore.listAll(app)
+            if (all.isEmpty()) return "No reminders are pending, sir."
+            val fmt = java.text.SimpleDateFormat("EEE d MMM, HH:mm", java.util.Locale.getDefault())
+            return "Pending reminders, sir:\n" + all.joinToString("\n") { (at, t) ->
+                "• ${fmt.format(java.util.Date(at))} — $t"
+            }
+        }
+        afterAny(text, "cancel reminder ", "remove reminder ", "delete reminder ")?.let { target ->
+            val hit = ReminderStore.listAll(app).firstOrNull { it.second.contains(target.trim(), ignoreCase = true) }
+                ?: return "No reminder matching \"$target\" found, sir."
+            ReminderStore.cancel(app, hit.second)
+            return "Reminder cancelled, sir: \"${hit.second}\"."
+        }
+        ReminderCommands.parse(input)?.let { parsed ->
+            val notificationsAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(app, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+            if (!notificationsAllowed) {
+                return "I can store that reminder, sir, but to actually show it I need notification permission. " +
+                    "Allow notifications for AURIX in Settings, then say it again."
+            }
+            val fireAt = parsed.fireAt(System.currentTimeMillis())
+            ReminderStore.schedule(app, parsed.text, fireAt)
+            return "Reminder set for ${parsed.summary}, sir: \"${parsed.text}\"."
+        }
+        if (text.contains("remind")) {
+            return "Tell me when, sir — for example: remind me to call HR tomorrow at 9 am, or remind me in 20 minutes to stretch."
         }
 
         // ---------- Notifications & OTP ----------
