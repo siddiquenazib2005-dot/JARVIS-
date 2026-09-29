@@ -221,8 +221,10 @@ class WakeWordEngineTest {
     // ---------------------------------------------------------------
     @Test
     fun extra_cooldownAndConcurrency() {
+        // Inside the window: active. Boundary: exactly COOLDOWN ms later the
+        // cooldown has expired (not <), so a wake may fire again.
         assertTrue(WakeWordService.cooldownActive(nowMs = 4_000L, lastActivationAtMs = 999L))
-        assertFalse(WakeWordService.cooldownActive(nowMs = 4_000L, lastActivationAtMs = 1_000L))
+        assertTrue(WakeWordService.cooldownActive(nowMs = 3_999L, lastActivationAtMs = 0L))
         assertFalse(WakeWordService.cooldownActive(nowMs = 4_000L, lastActivationAtMs = 0L))
 
         AmbientPhaseBus.reset()
