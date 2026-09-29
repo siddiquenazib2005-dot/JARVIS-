@@ -179,6 +179,15 @@ fun ChatScreen(
         )
     }
 
+    // Ambient entity: bridge the real combined mic/TTS amplitude to the
+    // overlay window. Publishing while the companion is hidden is harmless —
+    // the bus just remembers the latest level for the next activation.
+    LaunchedEffect(viewModel) {
+        viewModel.orbLevel.collect { level ->
+            com.jarvis.ai.overlay.ambient.AudioLevelBus.publish(level)
+        }
+    }
+
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> if (granted) viewModel.toggleHandsFreeMode() else viewModel.voicePermissionDenied() }
