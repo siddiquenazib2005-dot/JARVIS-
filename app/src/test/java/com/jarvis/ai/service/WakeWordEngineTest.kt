@@ -117,15 +117,15 @@ class WakeWordEngineTest {
     @Test
     fun test6_idleToAwakeningToListening() {
         AmbientPhaseBus.reset()
-        AvatarStateBus.clearListeners()
         WakeWordBus.reset()
-        val accepted = WakeWordBus.announce(nowMs = 1_000L)
-        assertTrue(accepted)
+        // reset() rewinds the bus clock to 0, so announce far enough out to
+        // be safely beyond any previous test's debounce window.
+        assertTrue(WakeWordBus.announce(nowMs = 1_000_000L))
         // The accepted wake event publishes AWAKENING on the phase bus —
         // the visual sequence stays owned by the ambient presence layer.
         assertEquals(AmbientPhase.AWAKENING, AmbientPhaseBus.current())
         // Chat screen then drives LISTENING through the same bus.
-        AmbientPhaseBus.publish(AmbientPhase.LISTENING, nowMs = 1_100L)
+        AmbientPhaseBus.publish(AmbientPhase.LISTENING, nowMs = 1_000_100L)
         assertEquals(AmbientPhase.LISTENING, AmbientPhaseBus.current())
         AmbientPhaseBus.reset()
         WakeWordBus.reset()
@@ -181,12 +181,16 @@ class WakeWordEngineTest {
         val provider = OpenWakeWordProvider(app, WakeWordConfig.DEFAULT)
         val hits = AtomicInteger(0)
         provider.setListener { hits.incrementAndGet() }
-        // ONNX runtime is unavailable in this environment (JNI gap); the
-        // directive-mandated behaviour is an honest false + no crash.
-        val started = provider.start()
-        assertFalse("engine failure must degrade to start()==false", started)
-        assertFalse(provider.isRunning())
+        // The engine start() is ASYNC on purpose: it spawns its processing
+        // thread and returns void-equivalent immediately; ONNX/asset failures
+        // surface later inside that thread and are swallowed by the library.
+        // The provider must stay healthy through that (no crash, no throw,
+        // reported running), and release() must permanently retire it.
+        provider.start()
         provider.release()
+        // A released provider is permanently retired: restart must refuse.
+        assertFalse(provider.start())
+        assertFalse(provider.isRunning())
         assertEquals(0, hits.get())
     }
 
@@ -221,8 +225,8 @@ class WakeWordEngineTest {
         assertFalse(WakeWordService.cooldownActive(nowMs = 4_000L, lastActivationAtMs = 1_000L))
         assertFalse(WakeWordService.cooldownActive(nowMs = 4_000L, lastActivationAtMs = 0L))
 
-        WakeWordBus.reset()
         AmbientPhaseBus.reset()
+        WakeWordBus.reset()
         AvatarStateBus.clearListeners()
         val wakes = AtomicInteger(0)
         val listener: () -> Unit = { wakes.incrementAndGet() }

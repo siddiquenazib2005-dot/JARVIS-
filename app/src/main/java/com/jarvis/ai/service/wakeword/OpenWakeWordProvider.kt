@@ -56,8 +56,13 @@ class OpenWakeWordProvider(
     @Volatile
     private var paused = false
 
+    /** release() is permanent: the instance refuses every later start(). */
+    @Volatile
+    private var released = false
+
     override fun start(): Boolean {
         if (started) return true
+        if (released) return false
         if (!hasMicPermission()) return false
         val built = engine ?: buildEngine() ?: return false
         engine = built
@@ -88,6 +93,7 @@ class OpenWakeWordProvider(
 
     override fun resume(): Boolean {
         if (!started || !paused) return started
+        if (released) return false
         paused = false
         val current = engine ?: return false
         val ok = runCatching { current.start { score -> dispatch(score) } }.isSuccess
@@ -107,6 +113,7 @@ class OpenWakeWordProvider(
     }
 
     override fun release() {
+        released = true
         started = false
         paused = false
         listener = null

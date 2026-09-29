@@ -32,7 +32,10 @@ object WakeWordBus {
      * Announces a wake-word detection. Returns true when the event was
      * accepted (first inside the debounce window) and listeners were notified.
      * The accepted event is also published to [AmbientPhaseBus] as AWAKENING.
+     * Synchronized so concurrent engine events can never double-pass the
+     * debounce window.
      */
+    @Synchronized
     fun announce(nowMs: Long = System.currentTimeMillis()): Boolean {
         val last = lastAcceptedAtMs
         if (nowMs - last < DEBOUNCE_MS) return false
@@ -66,6 +69,7 @@ object WakeWordBus {
     }
 
     /** Test/diagnostic reset. */
+    @Synchronized
     fun reset() {
         lastAcceptedAtMs = 0L
         listeners.clear()
