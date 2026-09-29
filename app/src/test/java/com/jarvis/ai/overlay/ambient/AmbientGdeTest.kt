@@ -23,7 +23,7 @@ class AmbientGdeTest {
     @Test
     fun `wake word announcement reaches the overlay listener`() {
         var wakes = 0
-        val listener = { wakes++ }
+        val listener: () -> Unit = { wakes++ }
         WakeWordBus.reset()
         WakeWordBus.observe(listener)
         val accepted = WakeWordBus.announce(nowMs = 10_000L)
@@ -54,7 +54,7 @@ class AmbientGdeTest {
     fun `repeated wake word events inside the debounce window are dropped`() {
         WakeWordBus.reset()
         var wakes = 0
-        val listener = { wakes++ }
+        val listener: () -> Unit = { wakes++ }
         WakeWordBus.observe(listener)
         assertTrue(WakeWordBus.announce(nowMs = 10_000L))
         assertFalse(WakeWordBus.announce(nowMs = 10_000L + 400))
