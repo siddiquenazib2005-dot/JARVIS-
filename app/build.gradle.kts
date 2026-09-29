@@ -99,6 +99,11 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
 
+    // On-device wake-word engine (openWakeWord port, ONNX Runtime embedded —
+    // no network, no API key). Consumed ONLY through service/wakeword/
+    // WakeWordProvider; the rest of AURIX never touches these APIs.
+    implementation(libs.openwakeword.android)
+
     // Google Gemini SDK (vision / text generation via core.router)
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 

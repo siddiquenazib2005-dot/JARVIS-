@@ -128,8 +128,7 @@ object AvatarStateBus {
     @Volatile
     private var current: AvatarState = AvatarState.IDLE
 
-    @Volatile
-    private var listener: ((AvatarState) -> Unit)? = null
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<(AvatarState) -> Unit>()
 
     /** Last published state; the bubble uses this when it starts up. */
     fun state(): AvatarState = current
@@ -138,17 +137,28 @@ object AvatarStateBus {
     fun set(next: AvatarState) {
         if (next == current) return
         current = next
-        runCatching { listener?.invoke(next) }
+        listeners.forEach { runCatching { it(next) } }
     }
 
-    /** Called by the bubble service while it is alive. */
+    /**
+     * Registers a state listener. Multiple listeners are supported (the
+     * overlay service and the wake-word service both observe states); each
+     * owner removes its own listener via [stopObserving] to avoid leaks.
+     * The current state is delivered immediately on registration so a
+     * late subscriber starts from the live value.
+     */
     fun observe(block: (AvatarState) -> Unit) {
-        listener = block
+        listeners += block
         runCatching { block(current) }
     }
 
-    /** Called when the bubble goes away, so no stale view is touched. */
-    fun stopObserving() {
-        listener = null
+    /** Removes one previously registered listener. */
+    fun stopObserving(block: (AvatarState) -> Unit) {
+        listeners -= block
+    }
+
+    /** Removes ALL listeners (test/diagnostic reset). */
+    fun clearListeners() {
+        listeners.clear()
     }
 }

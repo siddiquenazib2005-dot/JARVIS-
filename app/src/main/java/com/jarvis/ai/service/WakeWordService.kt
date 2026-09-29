@@ -14,37 +14,59 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.jarvis.ai.MainActivity
+import com.jarvis.ai.core.VoiceSessionGate
+import com.jarvis.ai.overlay.AvatarState
+import com.jarvis.ai.overlay.AvatarStateBus
+import com.jarvis.ai.overlay.ambient.AmbientPhase
+import com.jarvis.ai.overlay.ambient.AmbientPhaseBus
+import com.jarvis.ai.service.wakeword.OpenWakeWordProvider
+import com.jarvis.ai.service.wakeword.WakeWordConfig
+import com.jarvis.ai.service.wakeword.WakeWordProvider
 
 /**
- * Always-on "Aurix / Jarvis" wake-word listener (MYRA parity).
+ * Always-on on-device wake-word listener.
  *
- * Design notes:
- * - Uses the platform [SpeechRecognitionManager] rather than Porcupine or
- *   Vosk. Those need either a paid key or a ~40 MB model download, and the
- *   APK is already ~61 MB. The trade-off is stated honestly in the docs:
- *   platform recognition is less power-efficient than a real DSP hotword
- *   engine, so this service is OPT-IN and never auto-starts.
- * - The recognizer stops itself after every utterance, so the loop restarts
- *   it. Restarts are backed off ([BASE_BACKOFF_MS] doubling to [MAX_BACKOFF_MS])
- *   because a permanently failing recognizer -- no network for the vendor
- *   service, mic held by a call -- would otherwise spin in a tight loop and
- *   flatten the battery.
- * - Only transcripts containing the wake word are acted on; [WakeWordDetector]
- *   already owns that matching logic and its phonetic variants.
+ * Wake-word phase redesign (directive: WAKE WORD ENGINE INTEGRATION):
+ * - The engine is a [WakeWordProvider] (default: [OpenWakeWordProvider] over
+ *   openWakeWord's ONNX models — fully on-device, no network, no API key).
+ *   This service is the ONLY consumer; nothing else in AURIX touches the
+ *   provider beyond [WakeWordConfig] defaults.
+ * - Audio ownership: the provider owns the single always-on AudioRecord while
+ *   armed. When a chat voice session (push-to-talk/hands-free) takes the mic
+ *   ([VoiceSessionGate.active]) or the assistant is THINKING/SPEAKING, the
+ *   provider is PAUSED and resumed when the mic is free again. There is never
+ *   a second live capture alongside another listener.
+ * - Phases: a detection announces the (already debounced) WakeWordBus and
+ *   opens MainActivity exactly as before. Duplicate activations are blocked
+ *   by the [WakeWordBus] debounce, the [ACTIVATION_COOLDOWN_MS] cooldown and
+ *   the phase gate below; the visual AWAKENING -> LISTENING sequence remains
+ *   owned by the ambient presence layer.
+ * - Recovery: failures (mic denied, model unavailable, engine start errors)
+ *   back off exponentially ([BASE_BACKOFF_MS] doubling to [MAX_BACKOFF_MS])
+ *   instead of spinning. A permanently failing engine degrades to "wake word
+ *   unavailable" — manual activation, chat and existing voice paths keep the
+ *   app fully usable. Nothing here can crash the app.
  */
 class WakeWordService : Service() {
 
     private val main = Handler(Looper.getMainLooper())
-    private var speech: SpeechRecognitionManager? = null
+    private var provider: WakeWordProvider? = null
     private var running = false
     private var backoffMs = BASE_BACKOFF_MS
+
+    /** Epoch ms of the last accepted activation (state-gate half of debounce). */
+    private var lastActivationAtMs = 0L
+
+    /** Re-arms the provider after a pause window (chat session, TTS turn). */
+    private val resumeRun = Runnable { resumeProvider() }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         startForeground(NOTIFICATION_ID, buildNotification())
-        speech = SpeechRecognitionManager(this)
+        provider = OpenWakeWordProvider(this, WakeWordConfig.DEFAULT)
+        provider?.setListener { event -> onWakeDetected(event.score) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -60,7 +82,8 @@ class WakeWordService : Service() {
         }
         if (!running) {
             running = true
-            listenOnce()
+            backoffMs = BASE_BACKOFF_MS
+            startProvider()
         }
         return START_STICKY
     }
@@ -68,62 +91,95 @@ class WakeWordService : Service() {
     override fun onDestroy() {
         running = false
         main.removeCallbacksAndMessages(null)
-        runCatching { speech?.destroy() }
-        speech = null
+        provider?.let { engine ->
+            runCatching { engine.setListener(null) }
+            runCatching { engine.release() }
+        }
+        provider = null
         Listening.set(false)
         super.onDestroy()
     }
 
-    /** One recognition session; the callbacks schedule the next one. */
-    private fun listenOnce() {
+    /** Arms the engine. On failure, backs off and retries while running. */
+    private fun startProvider() {
         if (!running) return
-        val engine = speech ?: return
-        val started = engine.start(
-            onPartial = { transcript -> handleTranscript(transcript, final = false) },
-            onFinal = { transcript ->
-                handleTranscript(transcript, final = true)
-                scheduleNext(reset = true)
-            },
-            onError = { scheduleNext(reset = false) }
-        )
+        val started = runCatching { provider?.start() }.getOrDefault(false)
         Listening.set(started)
-        if (!started) scheduleNext(reset = false)
+        if (started) {
+            backoffMs = BASE_BACKOFF_MS
+        } else {
+            scheduleRetry()
+        }
     }
 
-    /**
-     * Restarts the loop. [reset] true means the last session worked, so the
-     * backoff returns to its floor; false means it failed and the delay grows.
-     */
-    private fun scheduleNext(reset: Boolean) {
+    private fun resumeProvider() {
         if (!running) return
-        backoffMs = if (reset) BASE_BACKOFF_MS else minOf(backoffMs * 2, MAX_BACKOFF_MS)
-        main.postDelayed({ listenOnce() }, backoffMs)
+        if (mustStayPaused()) return
+        val ok = runCatching { provider?.resume() }.getOrDefault(false)
+        Listening.set(ok)
+        if (!ok) scheduleRetry()
     }
 
     /**
-     * Acts only on a transcript containing the wake phrase. Partial results
-     * are accepted so the app opens the moment the name is heard instead of
-     * waiting for end-of-speech.
+     * Pauses while another pipeline owns the mic, then re-checks after a
+     * short window instead of tight-looping.
      */
-    private fun handleTranscript(transcript: String, final: Boolean) {
-        if (!WakeWordDetector.containsWakeWord(transcript)) return
-        val command = WakeWordDetector.stripWakeWord(transcript)
-        // A partial hit with no command yet is worth opening on; waiting for
-        // the final result costs roughly a second of perceived latency.
-        if (!final && command.isNullOrBlank()) return
-        wake(command)
+    private fun pauseProvider() {
+        main.removeCallbacks(resumeRun)
+        runCatching { provider?.pause() }
+        Listening.set(false)
+        main.postDelayed(resumeRun, PAUSE_RECHECK_MS)
     }
 
-    /** Brings the assistant forward, pre-filling the spoken command if any. */
-    private fun wake(command: String?) {
-        // Phase G: let the ambient entity play its AWAKENING animation. The
-        // bus debounces repeated partial-result events; this triggers ONLY the
-        // visual awakening — interaction/execution still flows exactly as
-        // before (MainActivity -> existing routing -> MissionEngine).
+    /** Retry with exponential backoff; reset on every success. */
+    private fun scheduleRetry() {
+        if (!running) return
+        main.postDelayed({ startProvider() }, backoffMs)
+        backoffMs = minOf(backoffMs * 2, MAX_BACKOFF_MS)
+    }
+
+    /**
+     * True while the mic must NOT be ours: a chat STT session is active, the
+     * assistant is thinking, or it is speaking. Thinking/speaking suppressions
+     * also prevent wake events from fighting a TTS turn mid-flight.
+     */
+    private fun mustStayPaused(): Boolean =
+        WakeWordService.gateBlocked(
+            phase = AmbientPhaseBus.current(),
+            voiceSessionActive = VoiceSessionGate.active,
+            avatar = AvatarStateBus.state()
+        )
+
+    private fun onWakeDetected(score: Float) {
+        if (!running) return
+        // Duplicate-activation gate: while a voice session holds the mic or a
+        // turn is running, a detection can never start another one. (During
+        // those phases the provider is paused anyway — this also covers the
+        // race before pause lands.) The cooldown bounds false re-triggers; the
+        // WakeWordBus debounce bounds repeated engine events.
+        if (mustStayPaused()) return
+        val now = System.currentTimeMillis()
+        if (WakeWordService.cooldownActive(now, lastActivationAtMs)) return
+        lastActivationAtMs = now
+        wake()
+    }
+
+    /** Brings the assistant forward. */
+    private fun wake() {
+        // Let the ambient entity play its AWAKENING animation. The bus
+        // debounces repeated events; this triggers ONLY the visual awakening —
+        // interaction/execution still flows exactly as before (MainActivity ->
+        // existing routing -> MissionEngine). No second pipeline exists.
         com.jarvis.ai.overlay.ambient.WakeWordBus.announce()
+        // Yield the mic: the chat session that now opens owns it until the
+        // turn ends and the phase returns to IDLE (resumeProvider re-arms us).
+        pauseProvider()
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra(EXTRA_WAKE_COMMAND, command.orEmpty())
+            // Reuse the existing voice-mode handoff: MainActivity's collector
+            // opens the chat and starts the CURRENT hands-free/STT session.
+            // No second execution pipeline is created.
+            putExtra(MainActivity.EXTRA_OPEN_VOICE_MODE, true)
         }
         runCatching { startActivity(intent) }
     }
@@ -156,7 +212,7 @@ class WakeWordService : Service() {
         }
         return builder
             .setContentTitle("AURIX is listening")
-            .setContentText("Say Aurix to wake the assistant")
+            .setContentText(wakeNotificationText)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(open)
             .setOngoing(true)
@@ -177,12 +233,43 @@ class WakeWordService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.jarvis.ai.WAKE_WORD_STOP"
-        const val EXTRA_WAKE_COMMAND = "wake_command"
 
         private const val CHANNEL_ID = "aurix_wake_word"
         private const val NOTIFICATION_ID = 4711
         private const val BASE_BACKOFF_MS = 600L
         private const val MAX_BACKOFF_MS = 30_000L
+        /**
+         * Post-activation cooldown (directive §DEBOUNCE): one wake word may
+         * open at most one session per window even if the engine fires twice.
+         */
+        internal const val ACTIVATION_COOLDOWN_MS = 4_000L
+        /** How often a paused provider re-checks whether the mic is free. */
+        internal const val PAUSE_RECHECK_MS = 700L
+
+        /**
+         * Pure duplicate-activation gate (directive §DEBOUNCE). A wake event
+         * is ignored while a voice session holds the mic, while the assistant
+         * THINKS/SPEAKS, and during ANY non-idle chat phase (AWAKENING and
+         * LISTENING included) — one wake word can never start a second session
+         * on top of the one it just opened.
+         */
+        internal fun gateBlocked(
+            phase: AmbientPhase,
+            voiceSessionActive: Boolean,
+            avatar: AvatarState
+        ): Boolean =
+            voiceSessionActive ||
+                avatar == AvatarState.THINKING ||
+                avatar == AvatarState.SPEAKING ||
+                phase != AmbientPhase.IDLE
+
+        /** Pure cooldown check (kept side-effect free for tests). */
+        internal fun cooldownActive(nowMs: Long, lastActivationAtMs: Long): Boolean =
+            nowMs - lastActivationAtMs < ACTIVATION_COOLDOWN_MS
+
+        /** The phrase lives in WakeWordConfig.DEFAULT; never duplicated here. */
+        private val wakeNotificationText: String
+            get() = "Say \"${WakeWordConfig.DEFAULT.phrase.lowercase()}\" to wake the assistant"
 
         /** Starts the listener. Safe to call repeatedly. */
         fun start(context: Context) {

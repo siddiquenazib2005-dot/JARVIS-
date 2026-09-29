@@ -169,13 +169,17 @@ fun ChatScreen(
     // Publishing is safe even when the bubble is not running: the bus just
     // remembers the last state and the bubble picks it up when it appears.
     LaunchedEffect(state.isListening, state.isSpeaking, state.isLoading, state.isActing) {
-        com.jarvis.ai.overlay.AvatarStateBus.set(
-            com.jarvis.ai.overlay.AvatarState.from(
-                isListening = state.isListening,
-                isSpeaking = state.isSpeaking,
-                isLoading = state.isLoading,
-                isActing = state.isActing
-            )
+        val avatarState = com.jarvis.ai.overlay.AvatarState.from(
+            isListening = state.isListening,
+            isSpeaking = state.isSpeaking,
+            isLoading = state.isLoading,
+            isActing = state.isActing
+        )
+        com.jarvis.ai.overlay.AvatarStateBus.set(avatarState)
+        // Wake-word phase gate: the provider consumes this to pause during
+        // LISTENING/THINKING/SPEAKING/ACTING and resume once back at IDLE.
+        com.jarvis.ai.overlay.ambient.AmbientPhaseBus.publish(
+            com.jarvis.ai.overlay.ambient.AmbientPhase.from(avatarState)
         )
     }
 

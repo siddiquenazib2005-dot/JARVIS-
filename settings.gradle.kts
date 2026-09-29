@@ -16,6 +16,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // openWakeWord Android (on-device wake-word engine, JitPack-hosted).
+        maven { url = uri("https://jitpack.io") }
     }
 }
 

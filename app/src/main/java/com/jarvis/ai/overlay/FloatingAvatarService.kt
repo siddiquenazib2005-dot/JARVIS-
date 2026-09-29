@@ -94,6 +94,7 @@ class FloatingAvatarService : Service() {
     private var lastAppliedY = Int.MIN_VALUE
     private var audioListener: ((Float) -> Unit)? = null
     private var wakeListener: (() -> Unit)? = null
+    private var avatarStateListener: ((AvatarState) -> Unit)? = null
     private var eventListener: (() -> Unit)? = null
     /** §13 user toggle, cached; refreshed on start and APPLY_SETTINGS. */
     private var audioReactiveEnabled = true
@@ -116,7 +117,7 @@ class FloatingAvatarService : Service() {
         }
         runCatching { showCompanion() }
             .onFailure { CrashGuard.record(applicationContext, it) }
-        AvatarStateBus.observe { next ->
+        avatarStateListener = { next ->
             main.post {
                 avatarState = next
                 presence.onAssistantState(next)
@@ -124,6 +125,7 @@ class FloatingAvatarService : Service() {
                 notifyState()
             }
         }
+        AvatarStateBus.observe(avatarStateListener)
         // Real amplitude (mic RMS + TTS envelope) computed inside the app and
         // bridged here; the overlay never captures audio itself.
         audioReactive.reset()
@@ -209,7 +211,8 @@ class FloatingAvatarService : Service() {
     }
 
     override fun onDestroy() {
-        AvatarStateBus.stopObserving()
+        avatarStateListener?.let { AvatarStateBus.stopObserving(it) }
+        avatarStateListener = null
         audioListener?.let { AudioLevelBus.stopObserving(it) }
         audioListener = null
         AudioLevelBus.reset()
