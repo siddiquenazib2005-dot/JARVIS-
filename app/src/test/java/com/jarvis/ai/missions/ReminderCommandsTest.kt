@@ -54,7 +54,8 @@ class ReminderCommandsTest {
         val p = ReminderCommands.parse("remind me to take pills at 9 pm")!!
         assertEquals(21, hourOf(p.fireAt(now0())))
         assertEquals(0, minuteOf(p.fireAt(now0())))
-        assertEquals("to take pills", p.text)
+        // TRIGGER strips "remind me to ", so the connective "to" is gone too.
+        assertEquals("take pills", p.text)
     }
 
     @Test
@@ -133,7 +134,7 @@ class ReminderCommandsTest {
         val p = ReminderCommands.parse("remind me to stretch at 7")!!
         assertEquals(7, hourOf(p.fireAt(now0())))
         assertEquals(0, minuteOf(p.fireAt(now0())))
-        assertEquals("to stretch", p.text)
+        assertEquals("stretch", p.text)
     }
 
     @Test
