@@ -824,7 +824,7 @@ private class AurixCompanionView(
                 }
                 return true
             }
-            MotionEvent.            MotionEvent.ACTION_UP -> {
+                        MotionEvent.ACTION_UP -> {
                 removeCallbacks(holdRunnable)
                 onTouchActive(false)
                 if (holdFired) {
