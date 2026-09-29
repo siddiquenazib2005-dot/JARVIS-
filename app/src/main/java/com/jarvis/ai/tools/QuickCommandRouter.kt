@@ -267,6 +267,26 @@ class QuickCommandRouter(context: Context) {
             return FloatingAvatarService.hide(app)
         }
 
+        // ---------- Ambient entity controls (directive §13: user control) ----
+        if (matches(text, "aurix sleep", "aurix so jao", "minimize bubble", "bubble minimize")) {
+            FloatingAvatarService.minimize(app)
+            return "AURIX is resting, sir. Swipe up on the orb or say wake up to bring me back."
+        }
+        if (matches(text, "aurix wake up", "aurix jago", "bubble wake up")) {
+            FloatingAvatarService.wakeUp(app)
+            return "AURIX is awake, sir."
+        }
+        if (matches(text, "aurix voice visuals off", "bubble voice off")) {
+            com.jarvis.ai.overlay.ambient.AmbientSettings.setAudioReactiveEnabled(app, false)
+            FloatingAvatarService.applySettings(app)
+            return "Voice-reactive visuals are off, sir."
+        }
+        if (matches(text, "aurix voice visuals on", "bubble voice on")) {
+            com.jarvis.ai.overlay.ambient.AmbientSettings.setAudioReactiveEnabled(app, true)
+            FloatingAvatarService.applySettings(app)
+            return "Voice-reactive visuals are on, sir."
+        }
+
         // ---------- Offline memory recall ----------
         if (matches(text, "what is my name", "my name is ?", "my name?", "mera naam kya", "mera name kya")) {
             val saved = memory.recallFact("name")

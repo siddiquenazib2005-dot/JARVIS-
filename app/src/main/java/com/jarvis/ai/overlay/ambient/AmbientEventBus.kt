@@ -35,3 +35,12 @@ object AmbientEventBus {
         listeners.clear()
     }
 }
+
+/**
+ * Intent action any AURIX component can fire to trigger the same presence
+ * boost through [com.jarvis.ai.overlay.FloatingAvatarService] — content-free
+ * by contract: the intent carries NO payload describing the event.
+ */
+object AmbientEventBusContract {
+    const val ACTION_IMPORTANT_EVENT = "com.aurix.ai.companion.IMPORTANT_EVENT"
+}

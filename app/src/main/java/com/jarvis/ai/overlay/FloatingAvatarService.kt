@@ -29,21 +29,29 @@ import com.jarvis.ai.overlay.ambient.AmbientContextController
 import com.jarvis.ai.overlay.ambient.AmbientEntityPositioner
 import com.jarvis.ai.overlay.ambient.AmbientEntityRenderer
 import com.jarvis.ai.overlay.ambient.AmbientEventBus
+import com.jarvis.ai.overlay.ambient.AmbientEventBusContract
 import com.jarvis.ai.overlay.ambient.AmbientForm
 import com.jarvis.ai.overlay.ambient.AmbientFormMorph
 import com.jarvis.ai.overlay.ambient.AmbientFrame
+import com.jarvis.ai.overlay.ambient.AmbientGestureClassifier
 import com.jarvis.ai.overlay.ambient.AmbientMotionProfile
 import com.jarvis.ai.overlay.ambient.AmbientPhase
 import com.jarvis.ai.overlay.ambient.AmbientPoint
 import com.jarvis.ai.overlay.ambient.AmbientPresenceController
 import com.jarvis.ai.overlay.ambient.AmbientScreenModel
+import com.jarvis.ai.overlay.ambient.AmbientSettings
 import com.jarvis.ai.overlay.ambient.AmbientSpringPosition
 import com.jarvis.ai.overlay.ambient.AmbientTransitionPlan
 import com.jarvis.ai.overlay.ambient.AudioLevelBus
 import com.jarvis.ai.overlay.ambient.AudioReactiveController
 import com.jarvis.ai.overlay.ambient.WakeWordBus
 import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.hypot
 import kotlin.math.min
+
+// File-level constant: velocity tracker smoothing time constant, milliseconds.
+private const val VELOCITY_TAU_MS = 80f
 
 /**
  * User-enabled, system-level AURIX companion — now the host window of the
@@ -87,6 +95,8 @@ class FloatingAvatarService : Service() {
     private var audioListener: ((Float) -> Unit)? = null
     private var wakeListener: (() -> Unit)? = null
     private var eventListener: (() -> Unit)? = null
+    /** §13 user toggle, cached; refreshed on start and APPLY_SETTINGS. */
+    private var audioReactiveEnabled = true
 
     private val clock = AmbientAnimationClock { timeMs, deltaMs -> onAmbientFrame(timeMs, deltaMs) }
 
@@ -96,6 +106,9 @@ class FloatingAvatarService : Service() {
         super.onCreate()
         avatarState = AvatarStateBus.state()
         presence.onAssistantState(avatarState)
+        // §13: restore the user's ambient controls on every start.
+        presence.animationIntensity = AmbientSettings.animationIntensity(this)
+        audioReactiveEnabled = AmbientSettings.audioReactiveEnabled(this)
         startForeground(NOTIFICATION_ID, buildNotification())
         if (!canDrawOverlay(this)) {
             stopSelf()
@@ -147,6 +160,32 @@ class FloatingAvatarService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_COLLAPSE -> collapse()
+            // Phase E/F: presence controls (notification + PendingIntent only,
+            // no new UI).
+            ACTION_MINIMIZE -> {
+                presence.setMinimized(true)
+                context.setSleeping(true)
+            }
+            ACTION_WAKE_UP -> {
+                presence.setMinimized(false)
+                context.setSleeping(false)
+                presence.pulse(AmbientPhase.AWAKENING, AWAKENING_PULSE_MS)
+            }
+            // Phase E: transient alert — bigger, brighter, then decays.
+            AmbientEventBusContract.ACTION_IMPORTANT_EVENT -> context.importantEvent()
+            // Phase F: drag ended with velocity — glide in the fling direction.
+            ACTION_DRAG_RELEASE -> handleDragRelease(
+                DragRelease(
+                    dx = intent.getFloatExtra(EXTRA_DRAG_DX, 0f),
+                    dy = intent.getFloatExtra(EXTRA_DRAG_DY, 0f),
+                    dtMs = intent.getLongExtra(EXTRA_DRAG_DT, 16L)
+                )
+            )
+            // §13: live settings application without recreating the service.
+            ACTION_APPLY_SETTINGS -> {
+                presence.animationIntensity = AmbientSettings.animationIntensity(this)
+                audioReactiveEnabled = AmbientSettings.audioReactiveEnabled(this)
+            }
         }
         return START_STICKY
     }
@@ -231,7 +270,9 @@ class FloatingAvatarService : Service() {
                 spring.translate(dx.toFloat(), dy.toFloat())
             },
             onTouchActive = { active -> context.setInteracting(active) },
-            onDragFinished = { glideToEdgeAndPersist() },
+            onDragFinished = { dx: Float, dy: Float, dtMs: Long ->
+                handleDragRelease(DragRelease(dx, dy, dtMs))
+            },
             onExpandedChanged = { expanded -> resize(expanded) },
             onVoice = {
                 presence.pulse(AmbientPhase.AWAKENING, AWAKENING_PULSE_MS)
@@ -249,6 +290,10 @@ class FloatingAvatarService : Service() {
             onDoubleTap = {
                 presence.pulse(AmbientPhase.AWAKENING, AWAKENING_PULSE_MS)
                 openAssistant(voice = true)
+            },
+            onMinimize = {
+                presence.setMinimized(true)
+                context.setSleeping(true)
             }
         )
         companionView = view
@@ -273,7 +318,7 @@ class FloatingAvatarService : Service() {
         }
         spring.advance(deltaMs)
         morph.advance(deltaMs)
-        val audio = audioReactive.sample(timeMs)
+        val audio = if (audioReactiveEnabled) audioReactive.sample(timeMs) else 0f
         frame = AmbientFrame(
             phase = phase,
             form = morph.snapshot(),
@@ -298,7 +343,44 @@ class FloatingAvatarService : Service() {
         view.invalidateWith(frame)
     }
 
-    /** Drag ended: glide to the nearest screen edge, then persist the spot. */
+    /** Drag-release data handed over from the view's gesture handler. */
+    private data class DragRelease(val dx: Float, val dy: Float, val dtMs: Long)
+
+    /**
+     * Drag released. Fast releases keep their momentum (Phase F: the entity
+     * glides in the fling direction and settles collision-safe); slow releases
+     * snap to the nearest screen edge as before. Both paths persist the spot.
+     */
+    private fun handleDragRelease(release: DragRelease) {
+        val dt = release.dtMs.coerceAtLeast(1L)
+        val speedPxPerSec = hypot(release.dx, release.dy) / dt * 1000f
+        if (speedPxPerSec < FLING_THRESHOLD_PX_PER_SEC) {
+            glideToEdgeAndPersist()
+            return
+        }
+        // ~350ms of carried momentum, resolved into a safe target.
+        val position = spring.current
+        val desiredX = position.x + release.dx / dt * 1000f * FLING_MOMENTUM_FRACTION
+        val desiredY = position.y + release.dy / dt * 1000f * FLING_MOMENTUM_FRACTION
+        val plan = AmbientEntityPositioner.plan(
+            from = spring.current,
+            desiredX = desiredX,
+            desiredY = desiredY,
+            screen = screen,
+            entitySizePx = entitySize()
+        )
+        spring.startTransition(plan)
+        persistPosition(plan.to)
+    }
+
+    private fun persistPosition(point: AmbientPoint) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putInt(KEY_X, point.x.toInt())
+            .putInt(KEY_Y, point.y.toInt())
+            .apply()
+    }
+
+    /** Drag ended without momentum: glide to the nearest screen edge, then persist. */
     private fun glideToEdgeAndPersist() {
         val current = params ?: return
         val size = entitySize()
@@ -316,10 +398,7 @@ class FloatingAvatarService : Service() {
             entitySizePx = size
         )
         spring.startTransition(plan)
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-            .putInt(KEY_X, plan.to.x.toInt())
-            .putInt(KEY_Y, plan.to.y.toInt())
-            .apply()
+        persistPosition(plan.to)
     }
 
     // Helpers over the live spring position (the window layout params lag a
@@ -428,6 +507,7 @@ class FloatingAvatarService : Service() {
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(open)
             .addAction(android.R.drawable.ic_btn_speak_now, "Speak", serviceIntent(ACTION_VOICE, 21))
+            .addAction(android.R.drawable.ic_menu_manage, "Minimize", serviceIntent(ACTION_MINIMIZE, 23))
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Hide", serviceIntent(ACTION_HIDE, 22))
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
@@ -447,8 +527,52 @@ class FloatingAvatarService : Service() {
         private const val ACTION_HIDE = "com.aurix.ai.companion.HIDE"
         private const val ACTION_COLLAPSE = "com.aurix.ai.companion.COLLAPSE"
 
+        // Phase E/F presence + gesture actions.
+        private const val ACTION_MINIMIZE = "com.aurix.ai.companion.MINIMIZE"
+        private const val ACTION_WAKE_UP = "com.aurix.ai.companion.WAKE_UP"
+        private const val ACTION_APPLY_SETTINGS = "com.aurix.ai.companion.APPLY_SETTINGS"
+        private const val ACTION_DRAG_RELEASE = "com.aurix.ai.companion.DRAG_RELEASE"
+        private const val EXTRA_DRAG_DX = "dragDx"
+        private const val EXTRA_DRAG_DY = "dragDy"
+        private const val EXTRA_DRAG_DT = "dragDtMs"
+
+        /** Releases slower than this snap to an edge; faster ones keep momentum. */
+        private const val FLING_THRESHOLD_PX_PER_SEC = 1400f
+        /** Fraction of one second of fling velocity carried into the glide. */
+        private const val FLING_MOMENTUM_FRACTION = 0.35f
+
         /** How long the AWAKENING pulse shows before settling into LISTENING. */
         private const val AWAKENING_PULSE_MS = 900L
+
+        /** Applies [AmbientSettings] to a running companion (user controls). */
+        fun applySettings(context: Context) {
+            runCatching {
+                context.startService(
+                    Intent(context, FloatingAvatarService::class.java)
+                        .setAction(ACTION_APPLY_SETTINGS)
+                )
+            }
+        }
+
+        /** Phase E: parks the companion (SLEEPING) without hiding the service. */
+        fun minimize(context: Context) {
+            runCatching {
+                context.startService(
+                    Intent(context, FloatingAvatarService::class.java)
+                        .setAction(ACTION_MINIMIZE)
+                )
+            }
+        }
+
+        /** Phase E: wakes a minimized companion with the AWAKENING pulse. */
+        fun wakeUp(context: Context) {
+            runCatching {
+                context.startService(
+                    Intent(context, FloatingAvatarService::class.java)
+                        .setAction(ACTION_WAKE_UP)
+                )
+            }
+        }
 
         fun canDrawOverlay(context: Context): Boolean =
             Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
@@ -528,7 +652,8 @@ private class AurixCompanionView(
     private val renderer: AmbientEntityRenderer,
     private val onDrag: (Int, Int) -> Unit,
     private val onTouchActive: (Boolean) -> Unit,
-    private val onDragFinished: () -> Unit,
+    private val onDragFinished: (Float, Float, Long) -> Unit,
+    private val onMinimize: () -> Unit,
     private val onExpandedChanged: (Boolean) -> Unit,
     private val onVoice: () -> Unit,
     private val onOpen: () -> Unit,
@@ -565,6 +690,10 @@ private class AurixCompanionView(
     private var lastRawY = 0f
     private var downX = 0f
     private var downY = 0f
+    private var downAtMs = 0L
+    private var lastMoveAtMs = 0L
+    private var velocityX = 0f
+    private var velocityY = 0f
     private var dragged = false
     private var holdFired = false
     private var lastTapAtMs = 0L
@@ -577,8 +706,22 @@ private class AurixCompanionView(
         onHold()
     }
 
+    /** Fast swipe up: wake AURIX listening (same path as the hold gesture). */
+    private fun onSwipeWake() {
+        velocityX = 0f
+        velocityY = 0f
+        onHold()
+    }
+
+    /** Fast swipe down: minimize the entity ("swipe away to dismiss"). */
+    private fun onSwipeMinimize() {
+        velocityX = 0f
+        velocityY = 0f
+        onMinimize()
+    }
+
     init {
-        contentDescription = "AURIX floating companion. Tap to expand, hold to wake, drag to move."
+        contentDescription = "AURIX floating companion. Tap to expand, hold or swipe up to wake, swipe down to minimize, drag to move."
         isClickable = true
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         elevation = 12f * d
@@ -586,7 +729,7 @@ private class AurixCompanionView(
 
     fun setAvatarState(next: AvatarState) {
         state = next
-        contentDescription = "AURIX is ${next.label}. Tap to expand, hold to wake, drag to move."
+        contentDescription = "AURIX is ${next.label}. Tap to expand, hold or swipe up to wake, swipe down to minimize, drag to move."
         invalidate()
     }
 
@@ -650,6 +793,10 @@ private class AurixCompanionView(
                 downY = event.rawY
                 lastRawX = event.rawX
                 lastRawY = event.rawY
+                downAtMs = event.eventTime
+                lastMoveAtMs = event.eventTime
+                velocityX = 0f
+                velocityY = 0f
                 dragged = false
                 holdFired = false
                 onTouchActive(true)
@@ -663,13 +810,21 @@ private class AurixCompanionView(
                     removeCallbacks(holdRunnable)
                 }
                 if (dragged) {
-                    onDrag((event.rawX - lastRawX).toInt(), (event.rawY - lastRawY).toInt())
+                    val dx = event.rawX - lastRawX
+                    val dy = event.rawY - lastRawY
+                    onDrag(dx.toInt(), dy.toInt())
+                    // Exponential velocity tracker (no VelocityTracker allocation).
+                    val dt = (event.eventTime - lastMoveAtMs).coerceAtLeast(1L)
+                    val blend = 1f - exp(-dt / VELOCITY_TAU_MS)
+                    velocityX += (dx / dt * 1000f - velocityX) * blend
+                    velocityY += (dy / dt * 1000f - velocityY) * blend
                     lastRawX = event.rawX
                     lastRawY = event.rawY
+                    lastMoveAtMs = event.eventTime
                 }
                 return true
             }
-            MotionEvent.ACTION_UP -> {
+            MotionEvent.            MotionEvent.ACTION_UP -> {
                 removeCallbacks(holdRunnable)
                 onTouchActive(false)
                 if (holdFired) {
@@ -677,7 +832,14 @@ private class AurixCompanionView(
                     return true
                 }
                 if (dragged) {
-                    onDragFinished()
+                    val releaseDt = (event.eventTime - lastMoveAtMs).coerceAtLeast(1L)
+                    when (AmbientGestureClassifier.classify(velocityX, velocityY)) {
+                        AmbientGestureClassifier.Gesture.WAKE -> onSwipeWake()
+                        AmbientGestureClassifier.Gesture.MINIMIZE -> onSwipeMinimize()
+                        AmbientGestureClassifier.Gesture.FLING ->
+                            onDragFinished(velocityX * releaseDt / 1000f, velocityY * releaseDt / 1000f, releaseDt)
+                        AmbientGestureClassifier.Gesture.REST -> onDragFinished(0f, 0f, releaseDt)
+                    }
                 } else if (expanded) {
                     when {
                         event.x in 84f * d..142f * d && event.y >= 68f * d -> onVoice()

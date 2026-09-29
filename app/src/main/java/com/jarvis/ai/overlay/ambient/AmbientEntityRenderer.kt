@@ -18,7 +18,9 @@ data class AmbientFrame(
     val form: MorphSnapshot,
     val context: AmbientContextProfile,
     val audio: Float,
-    val timeMs: Long
+    val timeMs: Long,
+    /** Ms left on the active transient pulse, 0 when none (drives H effects). */
+    val pulseRemainingMs: Long = 0L
 ) {
     companion object {
         /** Used before the first clock tick arrives (startup frame). */
@@ -106,8 +108,16 @@ class AmbientEntityRenderer(
 
         // Micro-orbit: subtle drift so the entity feels alive while parked.
         val orbitAngle = (timeMs % phase.orbitPeriodMs).toFloat() / phase.orbitPeriodMs * TAU
-        val ox = cx + cos(orbitAngle) * phase.orbitAmplitude * radius
-        val oy = cy + sin(orbitAngle) * phase.orbitAmplitude * radius * 0.6f
+        var ox = cx + cos(orbitAngle) * phase.orbitAmplitude * radius
+        var oy = cy + sin(orbitAngle) * phase.orbitAmplitude * radius * 0.6f
+
+        // Phase H — ERROR glitch: brief deterministic positional jitter while
+        // the pulse lives; it dies with the pulse, never loops forever.
+        if (phase == AmbientPhase.ERROR && frame.pulseRemainingMs > 0L) {
+            val env = (frame.pulseRemainingMs.toFloat() / ERROR_GLITCH_SPAN_MS).coerceIn(0f, 1f)
+            ox += sin(timeMs * 0.089f) * r * 0.05f * env
+            oy += cos(timeMs * 0.113f) * r * 0.04f * env
+        }
 
         // --- Layer 1: volumetric glow ----------------------------------------
         glow.color = shellColor
@@ -180,12 +190,17 @@ class AmbientEntityRenderer(
         val written = AmbientParticles.positions(count, timeMs, audio, particleBuffer)
         particlePaint.color = coreColor
         particlePaint.alpha = (90 + 120 * intensity).toInt()
+        // Phase H — AWAKENING: the entity reconstructs itself from light, so
+        // particles start as a wide cloud and converge as the pulse spends.
+        val spread = if (phase == AmbientPhase.AWAKENING && frame.pulseRemainingMs > 0L) {
+            1f + 0.8f * (frame.pulseRemainingMs.toFloat() / AWAKENING_SPAN_MS).coerceIn(0f, 1f)
+        } else 1f
         var i = 0
         while (i < written) {
             val px = particleBuffer[2 * i]
             val py = particleBuffer[2 * i + 1]
             val size = r * 0.045f * (0.7f + ((i * 37) % 100) / 100f)
-            canvas.drawCircle(ox + px * r, oy + py * r, size, particlePaint)
+            canvas.drawCircle(ox + px * r * spread, oy + py * r * spread, size, particlePaint)
             i++
         }
 
@@ -286,5 +301,9 @@ class AmbientEntityRenderer(
         const val VOICE_EXPANSION = 0.22f
         const val FRINGE_COOL = 0xFF4FC3F7.toInt()
         const val FRINGE_WARM = 0xFFFF8A80.toInt()
+
+        /** Pulse budgets these effects assume; matches the service wiring. */
+        const val AWAKENING_SPAN_MS = 900L
+        const val ERROR_GLITCH_SPAN_MS = 900L
     }
 }

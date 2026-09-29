@@ -262,6 +262,58 @@ class AmbientGdeTest {
         assertTrue(AmbientPhase.SPEAKING.audioGain > AmbientPhase.THINKING.audioGain)
         assertEquals(0f, AmbientPhase.SLEEPING.audioGain, 0.0001f)
     }
+
+    // ------------------------------------------------------------------
+    // Phase F remainder — gesture classification (pure JVM decision table)
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `fast vertical swipes are directional commands`() {
+        assertEquals(
+            AmbientGestureClassifier.Gesture.WAKE,
+            AmbientGestureClassifier.classify(velocityXPxPerSec = 200f, velocityYPxPerSec = -2500f)
+        )
+        assertEquals(
+            AmbientGestureClassifier.Gesture.MINIMIZE,
+            AmbientGestureClassifier.classify(velocityXPxPerSec = 100f, velocityYPxPerSec = 2600f)
+        )
+    }
+
+    @Test
+    fun `fast sideways releases fling with momentum instead of changing state`() {
+        assertEquals(
+            AmbientGestureClassifier.Gesture.FLING,
+            AmbientGestureClassifier.classify(velocityXPxPerSec = 3000f, velocityYPxPerSec = 300f)
+        )
+    }
+
+    @Test
+    fun `slow releases never trigger swipe actions`() {
+        assertEquals(
+            AmbientGestureClassifier.Gesture.REST,
+            AmbientGestureClassifier.classify(velocityXPxPerSec = 0f, velocityYPxPerSec = -900f)
+        )
+    }
+
+    @Test
+    fun `diagonal drags do not accidentally fire swipes`() {
+        assertEquals(
+            AmbientGestureClassifier.Gesture.FLING,
+            AmbientGestureClassifier.classify(velocityXPxPerSec = 2200f, velocityYPxPerSec = -2400f)
+        )
+    }
+
+    @Test
+    fun `transient remaining time is visible for pulse-lifetime effects`() {
+        var now = 1_000L
+        val controller = AmbientPresenceController(now = { now })
+        controller.pulse(AmbientPhase.AWAKENING, 900L)
+        val remaining = controller.transientRemainingMs(now)
+        requireNotNull(remaining)
+        assertTrue("remaining=$remaining", remaining in 1..900)
+        now += 900L
+        assertEquals(null, controller.transientRemainingMs(now))
+    }
 }
 
 /** Shared constants mirroring the service wiring. */

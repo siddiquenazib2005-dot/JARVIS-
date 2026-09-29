@@ -99,6 +99,17 @@ class AmbientPresenceController(
     fun hasTransient(nowMs: Long = now()): Boolean = synchronized(lock) {
         transientPhase != null && nowMs < transientUntilMs
     }
+
+    /**
+     * Milliseconds left on the running transient pulse, or null when none.
+     * The renderer uses the remaining budget for effects tied to a pulse's
+     * life (AWAKENING particle convergence, ERROR glitch envelope) so those
+     * effects always die exactly with the pulse — no orphaned animation.
+     */
+    fun transientRemainingMs(nowMs: Long = now()): Long? = synchronized(lock) {
+        val transient = transientPhase
+        if (transient != null && nowMs < transientUntilMs) transientUntilMs - nowMs else null
+    }
 }
 
 /**
