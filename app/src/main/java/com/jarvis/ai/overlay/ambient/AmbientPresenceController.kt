@@ -2,6 +2,7 @@ package com.jarvis.ai.overlay.ambient
 
 import android.view.Choreographer
 import com.jarvis.ai.overlay.AvatarState
+import com.jarvis.ai.overlay.AvatarStateBus
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -109,7 +110,9 @@ class AmbientAnimationClock(
     private var lowPower = false
     private var skippedFrames = 0
 
-    private val callback = Choreographer.FrameCallback { frameMs ->
+    // Explicit SAM type: the body re-references this property, and without
+    // the annotation Kotlin's type checker hits a recursive-declaration error.
+    private val callback: Choreographer.FrameCallback = Choreographer.FrameCallback { frameMs ->
         if (!running) return@FrameCallback
         val delta = if (lastFrameMs == 0L) 16L else (frameMs - lastFrameMs).coerceIn(0L, 100L)
         lastFrameMs = frameMs

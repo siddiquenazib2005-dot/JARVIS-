@@ -259,7 +259,7 @@ class FloatingAvatarService : Service() {
         val position = point()
         val middle = position.x + size / 2f
         val desiredX = if (middle < displayWidth() / 2f) 0f
-        else (displayWidth() - size).coerceAtLeast(0f).toFloat()
+        else (displayWidth() - size).coerceAtLeast(0).toFloat()
         val desiredY = (position.y - size / 2f + current.height / 2f)
             .coerceAtLeast(0f).toFloat()
         val plan: AmbientTransitionPlan = AmbientEntityPositioner.plan(
