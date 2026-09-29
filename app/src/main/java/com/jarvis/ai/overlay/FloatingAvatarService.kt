@@ -264,6 +264,9 @@ class FloatingAvatarService : Service() {
         val phase = presence.currentPhase(timeMs)
         if (phase != lastRenderedPhase) {
             lastRenderedPhase = phase
+            // Context follows the RENDERED phase (transient pulses included),
+            // so presence visuals stay in one coherent story.
+            context.onPhase(phase)
             // Phase D: retarget the shell morph; parameters glide, no hard cut.
             morph.target(AmbientForm.from(phase))
             clock.setLowPower(phase.lowPower)
