@@ -240,6 +240,9 @@ class AmbientGdeTest {
 
         presence.pulse(AmbientPhase.SPEAKING, 800L)
         val phase = presence.currentPhase(now + 100)
+        // Mirror the service wiring: the rendered phase is fed to the context
+        // controller on every change (see FloatingAvatarService.onAmbientFrame).
+        context.onPhase(phase)
         val frame = AmbientFrame(
             phase = phase,
             form = morph.snapshot(),
