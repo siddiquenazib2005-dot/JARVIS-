@@ -134,8 +134,10 @@ object MissionScheduler {
         val store = context.applicationContext
             .getSharedPreferences(TRIGGER_PREFS, Context.MODE_PRIVATE)
         var restored = 0
-        for ((key, raw) in store.all) {
+        for ((key, value) in store.all) {
             if (!key.startsWith("trigger_")) continue
+            // prefs values are typed Any?; guard before any String operations.
+            val raw = value as? String ?: continue
             val name = key.removePrefix("trigger_")
             val type = runCatching {
                 MissionTriggerType.valueOf(raw.split(":").first())
