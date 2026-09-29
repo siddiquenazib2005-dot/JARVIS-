@@ -9,7 +9,14 @@
  * removing it. The next healthy provider is tried automatically.
  */
 
-import { PROVIDERS, configuredProviders, keysFor, providerById } from './providers.js'
+import {
+	PROVIDERS,
+	configuredProviders,
+	keysFor,
+	providerById,
+	resolveModel,
+	capabilitiesFor,
+} from './providers.js'
 
 const COOLDOWN_MS = 60_000
 const REQUEST_TIMEOUT_MS = Number(process.env.AURIX_REQUEST_TIMEOUT_MS || 90_000)
@@ -54,16 +61,20 @@ function successRate(h) {
 	return total === 0 ? NEUTRAL_SUCCESS : h.ok / total
 }
 
-function selectable(provider) {
+function selectable(provider, capability) {
 	const h = record(provider.id)
 	if (h.authFailed) return false
 	if (h.cooldownUntil > Date.now()) return false
+	if (!capabilitiesFor(provider).includes(capability)) return false
 	return keysFor(provider).length > 0
 }
 
-/** Ordered candidate list, best first. */
-export function candidates(preferredId) {
-	const available = configuredProviders().filter(selectable)
+/**
+ * Ordered candidate list, best first, filtered to providers that declare the
+ * requested capability. Unknown capabilities are rejected by complete().
+ */
+export function candidates(preferredId, capability = 'chat') {
+	const available = configuredProviders().filter((p) => selectable(p, capability))
 	const scored = available
 		.map((provider) => {
 			const h = record(provider.id)
@@ -99,6 +110,7 @@ export function healthSnapshot() {
 			state,
 			keys,
 			defaultModel: provider.defaultModel,
+			capabilities: capabilitiesFor(provider),
 			successes: h.ok,
 			failures: h.fail,
 			avgLatencyMs: h.avgMs,
@@ -223,12 +235,15 @@ function extractError(raw) {
 /**
  * Runs a chat completion across the whole provider pool with key rotation and
  * failover. Resolves with the first success, or throws an aggregate error.
+ * `capability` filters the pool (chat/reasoning/coding/vision) and picks the
+ * provider's specialised model for that task, mirroring the Android client.
  */
-export async function complete({ messages, system, model, provider, temperature }) {
-	const pool = candidates(provider)
+export async function complete({ messages, system, model, provider, temperature, capability = 'chat' }) {
+	const pool = candidates(provider, capability)
 	if (pool.length === 0) {
 		const error = new Error(
-			'No provider is configured. Set at least one API key, for example GROQ_API_KEY.'
+			'No provider configured for capability "' + capability +
+			'". Set at least one API key, for example GROQ_API_KEY.'
 		)
 		error.status = 503
 		throw error
@@ -236,8 +251,12 @@ export async function complete({ messages, system, model, provider, temperature 
 
 	const attempts = []
 	for (const candidate of pool) {
+		// An explicit model only pins when it matches the requested provider;
+		// otherwise each provider serves its own capability-specialised model.
 		const requestedModel =
-			provider && candidate.id === provider ? model : candidate.defaultModel
+			provider && candidate.id === provider && model
+				? model
+				: resolveModel(candidate.id, capability, candidate.defaultModel)
 		for (const key of keysFor(candidate)) {
 			for (let tryNo = 0; tryNo < 2; tryNo += 1) {
 			try {

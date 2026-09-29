@@ -5,6 +5,8 @@
  *   GET  /                     service banner
  *   GET  /v1/health            provider health + configured keys
  *   GET  /v1/models            catalogue the app can pin
+ *   GET  /v1/tools             server-side tool list + schemas
+ *   POST /v1/tool              { name, args } -> run one tool
  *   POST /v1/probe             live reachability probe for one provider
  *   POST /v1/chat              non-streaming chat with failover
  *   POST /v1/chat/stream       Server-Sent Events streaming chat
@@ -23,7 +25,13 @@
 import express from 'express'
 import cors from 'cors'
 import crypto from 'crypto'
-import { PROVIDERS, configuredProviders, keysFor } from './providers.js'
+import {
+	CAPABILITIES,
+	PROVIDERS,
+	configuredProviders,
+	keysFor,
+	capabilitiesFor,
+} from './providers.js'
 import { complete, healthSnapshot, probe, candidates } from './router.js'
 import {
 	appendTurn,
@@ -36,8 +44,17 @@ import {
 	recentTurns,
 	rememberFact,
 } from './memory.js'
+import {
+	extractToolCall,
+	listTools,
+	runTool,
+	toolPromptBlock,
+} from './tools.js'
 
 const app = express()
+// Behind Render/Heroku-style proxies, trust exactly one hop so req.ip is the
+// real client IP (rate-limit key). Set AURIX_TRUST_PROXY=0 when exposed directly.
+app.set('trust proxy', Number(process.env.AURIX_TRUST_PROXY ?? 1))
 const PORT = process.env.PORT || 8080
 const APP_TOKEN = process.env.AURIX_APP_TOKEN || ''
 // Local/dev may run open; production must set AURIX_APP_TOKEN unless this is
@@ -46,13 +63,29 @@ const ALLOW_ANON = ['1', 'true', 'yes'].includes(
 	String(process.env.AURIX_ALLOW_ANON || '').toLowerCase()
 )
 const authRequired = Boolean(APP_TOKEN) || !ALLOW_ANON
+// AURIX_TOOLS=off disables server-side tool execution entirely.
+const TOOLS_ENABLED = !['1', 'true', 'yes'].includes(
+	String(process.env.AURIX_TOOLS || '').toLowerCase()
+)
 
 const DEFAULT_SYSTEM =
 	'You are AURIX, a concise and capable Android assistant. ' +
 	'Address the user as "sir". Keep answers short and practical. ' +
 	'Use Markdown when it improves clarity.'
 
-app.use(cors())
+// CORS: the Android app is a native client (no Origin header), so it is never
+// affected. Browser origins are denied unless listed in AURIX_ALLOWED_ORIGINS.
+const ALLOWED_ORIGINS = (process.env.AURIX_ALLOWED_ORIGINS || '')
+	.split(',').map((s) => s.trim()).filter(Boolean)
+
+app.use(cors({
+	origin(origin, cb) {
+		if (!origin || ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin)) {
+			return cb(null, true)
+		}
+		return cb(null, false)
+	},
+}))
 app.use(express.json({ limit: process.env.AURIX_JSON_LIMIT || '2mb' }))
 
 const buckets = new Map()
@@ -68,7 +101,7 @@ setInterval(() => sweepRateBuckets(Date.now()), RATE_SWEEP_MS).unref?.()
 
 app.use('/v1', (req, res, next) => {
 	const limit = Number(process.env.AURIX_RATE_LIMIT || 120)
-	const key = req.ip || req.headers['x-forwarded-for'] || 'local'
+	const key = req.ip || 'local'
 	const now = Date.now()
 	const b = buckets.get(key) || { start: now, count: 0 }
 	if (now - b.start > RATE_WINDOW_MS) { b.start = now; b.count = 0 }
@@ -127,12 +160,13 @@ app.get('/v1/health', (req, res) => {
 app.get('/v1/diagnostics', (req, res) => {
 	res.json({
 		ok: true,
-		version: '1.1.0',
+		version: '1.2.0',
 		node: process.version,
 		uptimeSeconds: Math.round(process.uptime()),
 		configuredProviders: configuredProviders().map((p) => p.id),
 		providers: healthSnapshot(),
 		memory: memoryStats(),
+		tools: { enabled: TOOLS_ENABLED, names: listTools().map((t) => t.name) },
 	})
 })
 
@@ -143,8 +177,23 @@ app.get('/v1/models', (req, res) => {
 			label: p.label,
 			defaultModel: p.defaultModel,
 			configured: keysFor(p).length > 0,
+			capabilities: capabilitiesFor(p),
 		})),
+		capabilities: CAPABILITIES,
 	})
+})
+
+app.get('/v1/tools', (req, res) => {
+	res.json({ enabled: TOOLS_ENABLED, tools: TOOLS_ENABLED ? listTools() : [] })
+})
+
+app.post('/v1/tool', async (req, res) => {
+	if (!TOOLS_ENABLED) {
+		return res.status(403).json({ error: { message: 'Tools are disabled on this server' } })
+	}
+	const name = req.body?.name
+	if (!name) return res.status(400).json({ error: { message: 'name is required' } })
+	res.json(await runTool(name, req.body?.args))
 })
 
 app.post('/v1/probe', async (req, res) => {
@@ -179,7 +228,36 @@ function buildMessages(body) {
 }
 
 function systemPrompt(body) {
-	return (body?.system || DEFAULT_SYSTEM) + memoryPreamble()
+	return (body?.system || DEFAULT_SYSTEM) + memoryPreamble() + (TOOLS_ENABLED ? toolPromptBlock() : '')
+}
+
+const MAX_TOOL_ROUNDS = 3
+
+/**
+ * One chat completion with a bounded tool-call loop: when the model answers
+ * with a tool-call JSON, the tool runs and the model is re-asked with the
+ * result. Guards: max rounds + a repeated tool+args signature breaks out.
+ */
+async function completeWithTools(params) {
+	const toolCalls = []
+	let messages = params.messages
+	const seen = new Set()
+	for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
+		const result = await complete({ ...params, messages })
+		const call = TOOLS_ENABLED ? extractToolCall(result.text) : null
+		if (!call) return { result, toolCalls }
+		const signature = call.tool + ':' + JSON.stringify(call.args)
+		if (seen.has(signature)) return { result, toolCalls }
+		seen.add(signature)
+		const outcome = await runTool(call.tool, call.args)
+		toolCalls.push({ ...call, ok: outcome.ok, ms: outcome.ms, error: outcome.error })
+		messages = [
+			...messages,
+			{ role: 'assistant', content: result.text },
+			{ role: 'user', content: 'TOOL_RESULT ' + JSON.stringify(outcome) },
+		]
+	}
+	return { result: await complete({ ...params, messages }), toolCalls }
 }
 
 app.post('/v1/chat', async (req, res) => {
@@ -187,17 +265,19 @@ app.post('/v1/chat', async (req, res) => {
 	if (messages.length === 0) {
 		return res.status(400).json({ error: { message: 'prompt or messages is required' } })
 	}
+	const userPrompt = messages[messages.length - 1].content
 	try {
-		const result = await complete({
+		const { result, toolCalls } = await completeWithTools({
 			messages,
 			system: systemPrompt(req.body),
 			model: req.body?.model,
 			provider: req.body?.provider,
 			temperature: req.body?.temperature,
+			capability: req.body?.capability,
 		})
 		const sessionId = req.body?.sessionId
 		if (sessionId) {
-			appendTurn(sessionId, 'user', messages[messages.length - 1].content)
+			appendTurn(sessionId, 'user', userPrompt)
 			appendTurn(sessionId, 'assistant', result.text)
 		}
 		res.json({
@@ -207,6 +287,7 @@ app.post('/v1/chat', async (req, res) => {
 			model: result.model,
 			latencyMs: result.latencyMs,
 			failover: result.attempts,
+			toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
 		})
 	} catch (err) {
 		res.status(err.status || 500).json({
@@ -234,12 +315,13 @@ app.post('/v1/chat/stream', async (req, res) => {
 	const send = (payload) => res.write('data: ' + JSON.stringify(payload) + '\n\n')
 
 	try {
-		const result = await complete({
+		const { result, toolCalls } = await completeWithTools({
 			messages,
 			system: systemPrompt(req.body),
 			model: req.body?.model,
 			provider: req.body?.provider,
 			temperature: req.body?.temperature,
+			capability: req.body?.capability,
 		})
 
 		send({
@@ -248,6 +330,7 @@ app.post('/v1/chat/stream', async (req, res) => {
 				providerLabel: result.providerLabel,
 				model: result.model,
 				latencyMs: result.latencyMs,
+				toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
 			},
 		})
 
