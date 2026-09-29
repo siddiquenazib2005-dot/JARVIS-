@@ -25,8 +25,13 @@ import android.view.WindowManager
 import com.jarvis.ai.MainActivity
 import com.jarvis.ai.diagnostics.CrashGuard
 import com.jarvis.ai.overlay.ambient.AmbientAnimationClock
+import com.jarvis.ai.overlay.ambient.AmbientContextController
 import com.jarvis.ai.overlay.ambient.AmbientEntityPositioner
 import com.jarvis.ai.overlay.ambient.AmbientEntityRenderer
+import com.jarvis.ai.overlay.ambient.AmbientEventBus
+import com.jarvis.ai.overlay.ambient.AmbientForm
+import com.jarvis.ai.overlay.ambient.AmbientFormMorph
+import com.jarvis.ai.overlay.ambient.AmbientFrame
 import com.jarvis.ai.overlay.ambient.AmbientMotionProfile
 import com.jarvis.ai.overlay.ambient.AmbientPhase
 import com.jarvis.ai.overlay.ambient.AmbientPoint
@@ -36,6 +41,7 @@ import com.jarvis.ai.overlay.ambient.AmbientSpringPosition
 import com.jarvis.ai.overlay.ambient.AmbientTransitionPlan
 import com.jarvis.ai.overlay.ambient.AudioLevelBus
 import com.jarvis.ai.overlay.ambient.AudioReactiveController
+import com.jarvis.ai.overlay.ambient.WakeWordBus
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -71,11 +77,16 @@ class FloatingAvatarService : Service() {
     private val renderer = AmbientEntityRenderer(presence)
     private val spring = AmbientSpringPosition(AmbientMotionProfile())
     private val audioReactive = AudioReactiveController()
+    private val morph = AmbientFormMorph()
+    private val context = AmbientContextController()
+    private var frame = AmbientFrame.initial()
     private var screen = AmbientScreenModel(widthPx = 1, heightPx = 1)
     private var lastRenderedPhase: AmbientPhase? = null
     private var lastAppliedX = Int.MIN_VALUE
     private var lastAppliedY = Int.MIN_VALUE
     private var audioListener: ((Float) -> Unit)? = null
+    private var wakeListener: (() -> Unit)? = null
+    private var eventListener: (() -> Unit)? = null
 
     private val clock = AmbientAnimationClock { timeMs, deltaMs -> onAmbientFrame(timeMs, deltaMs) }
 
@@ -107,6 +118,23 @@ class FloatingAvatarService : Service() {
         audioListener = listener
         AudioLevelBus.reset()
         AudioLevelBus.observe(listener)
+
+        // Phase G: the EXISTING WakeWordService announces detections here;
+        // the orb plays AWAKENING and the app still handles the interaction
+        // exactly as before. Debounce lives in the bus.
+        WakeWordBus.reset()
+        val onWake: () -> Unit = {
+            presence.setMinimized(false)
+            context.setSleeping(false)
+            presence.pulse(AmbientPhase.AWAKENING, AWAKENING_PULSE_MS)
+        }
+        wakeListener = onWake
+        WakeWordBus.observe(onWake)
+
+        // Phase E: important AURIX-internal events briefly boost presence.
+        val onImportantEvent: () -> Unit = { context.importantEvent() }
+        eventListener = onImportantEvent
+        AmbientEventBus.observe(onImportantEvent)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -146,6 +174,10 @@ class FloatingAvatarService : Service() {
         audioListener?.let { AudioLevelBus.stopObserving(it) }
         audioListener = null
         AudioLevelBus.reset()
+        wakeListener?.let { WakeWordBus.stopObserving(it) }
+        wakeListener = null
+        eventListener?.let { AmbientEventBus.stopObserving(it) }
+        eventListener = null
         clock.stop()
         main.removeCallbacksAndMessages(null)
         companionView?.stopAnimation()
@@ -198,6 +230,7 @@ class FloatingAvatarService : Service() {
             onDrag = { dx, dy ->
                 spring.translate(dx.toFloat(), dy.toFloat())
             },
+            onTouchActive = { active -> context.setInteracting(active) },
             onDragFinished = { glideToEdgeAndPersist() },
             onExpandedChanged = { expanded -> resize(expanded) },
             onVoice = {
@@ -231,10 +264,20 @@ class FloatingAvatarService : Service() {
         val phase = presence.currentPhase(timeMs)
         if (phase != lastRenderedPhase) {
             lastRenderedPhase = phase
+            // Phase D: retarget the shell morph; parameters glide, no hard cut.
+            morph.target(AmbientForm.from(phase))
             clock.setLowPower(phase.lowPower)
         }
         spring.advance(deltaMs)
+        morph.advance(deltaMs)
         val audio = audioReactive.sample(timeMs)
+        frame = AmbientFrame(
+            phase = phase,
+            form = morph.snapshot(),
+            context = context.profile(timeMs),
+            audio = audio,
+            timeMs = timeMs
+        )
 
         // Apply the spring position to the window only when it actually moved;
         // updateViewLayout on every frame is what we must avoid.
@@ -249,7 +292,7 @@ class FloatingAvatarService : Service() {
             clamp(current)
             runCatching { windowManager.updateViewLayout(view, current) }
         }
-        view.invalidateWith(audio, timeMs)
+        view.invalidateWith(frame)
     }
 
     /** Drag ended: glide to the nearest screen edge, then persist the spot. */
@@ -481,6 +524,7 @@ private class AurixCompanionView(
     initialState: AvatarState,
     private val renderer: AmbientEntityRenderer,
     private val onDrag: (Int, Int) -> Unit,
+    private val onTouchActive: (Boolean) -> Unit,
     private val onDragFinished: () -> Unit,
     private val onExpandedChanged: (Boolean) -> Unit,
     private val onVoice: () -> Unit,
@@ -510,9 +554,8 @@ private class AurixCompanionView(
     private var state = initialState
     private var expanded = false
 
-    // Latest frame data handed over by the ambient clock.
-    private var frameAudio = 0f
-    private var frameTimeMs = 0L
+    // Latest frame handed over by the ambient clock.
+    private var frame: AmbientFrame = AmbientFrame.initial()
 
     // Gesture bookkeeping.
     private var lastRawX = 0f
@@ -545,9 +588,8 @@ private class AurixCompanionView(
     }
 
     /** Called by the shared ambient clock: refresh frame data and redraw. */
-    fun invalidateWith(audio: Float, timeMs: Long) {
-        frameAudio = audio
-        frameTimeMs = timeMs
+    fun invalidateWith(newFrame: AmbientFrame) {
+        frame = newFrame
         invalidate()
     }
 
@@ -574,8 +616,7 @@ private class AurixCompanionView(
                 cx = width / 2f,
                 cy = height / 2f,
                 radius = min(width, height) * 0.42f,
-                timeMs = frameTimeMs,
-                audioLevel = frameAudio
+                frame = frame
             )
         }
     }
@@ -584,7 +625,7 @@ private class AurixCompanionView(
         val bounds = RectF(2f * d, 2f * d, width - 2f * d, height - 2f * d)
         canvas.drawRoundRect(bounds, 26f * d, 26f * d, panel)
         canvas.drawRoundRect(bounds, 26f * d, 26f * d, panelBorder)
-        renderer.render(canvas, 47f * d, 48f * d, 31f * d, frameTimeMs, frameAudio)
+        renderer.render(canvas, 47f * d, 48f * d, 31f * d, frame)
         canvas.drawText("AURIX", 88f * d, 34f * d, title)
         canvas.drawText(state.label.uppercase(), 88f * d, 52f * d, subtitle)
 
@@ -608,6 +649,7 @@ private class AurixCompanionView(
                 lastRawY = event.rawY
                 dragged = false
                 holdFired = false
+                onTouchActive(true)
                 postDelayed(holdRunnable, holdTimeoutMs)
                 return true
             }
@@ -626,6 +668,7 @@ private class AurixCompanionView(
             }
             MotionEvent.ACTION_UP -> {
                 removeCallbacks(holdRunnable)
+                onTouchActive(false)
                 if (holdFired) {
                     performClick()
                     return true
@@ -659,6 +702,7 @@ private class AurixCompanionView(
             MotionEvent.ACTION_CANCEL -> {
                 removeCallbacks(holdRunnable)
                 holdFired = false
+                onTouchActive(false)
             }
         }
         return false

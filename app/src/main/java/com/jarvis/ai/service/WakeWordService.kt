@@ -116,6 +116,11 @@ class WakeWordService : Service() {
 
     /** Brings the assistant forward, pre-filling the spoken command if any. */
     private fun wake(command: String?) {
+        // Phase G: let the ambient entity play its AWAKENING animation. The
+        // bus debounces repeated partial-result events; this triggers ONLY the
+        // visual awakening — interaction/execution still flows exactly as
+        // before (MainActivity -> existing routing -> MissionEngine).
+        com.jarvis.ai.overlay.ambient.WakeWordBus.announce()
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra(EXTRA_WAKE_COMMAND, command.orEmpty())

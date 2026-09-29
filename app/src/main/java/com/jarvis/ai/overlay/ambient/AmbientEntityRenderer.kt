@@ -9,22 +9,51 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * 2.5D holographic renderer for the ambient AURIX entity.
+ * Everything the renderer needs for one frame, assembled by the service from
+ * the ambient controllers. Keeping it a plain data class means the view never
+ * touches the controllers and rendering stays a pure draw call.
+ */
+data class AmbientFrame(
+    val phase: AmbientPhase,
+    val form: MorphSnapshot,
+    val context: AmbientContextProfile,
+    val audio: Float,
+    val timeMs: Long
+) {
+    companion object {
+        /** Used before the first clock tick arrives (startup frame). */
+        fun initial(): AmbientFrame = AmbientFrame(
+            phase = AmbientPhase.IDLE,
+            form = MorphSnapshot(
+                scale = AmbientForm.ORB.scale,
+                squash = AmbientForm.ORB.squash,
+                ringHollowness = AmbientForm.ORB.ringHollowness,
+                spinSpeed = AmbientForm.ORB.spinSpeed,
+                deformation = AmbientForm.ORB.deformation,
+                targetForm = AmbientForm.ORB
+            ),
+            context = AmbientContextProfile.DEFAULT,
+            audio = 0f,
+            timeMs = 0L
+        )
+    }
+}
+
+/**
+ * 2.5D holographic renderer with Phase D shell morphing.
  *
- * Procedural Canvas rendering (no static PNG): translucent layered shell,
- * chromatic fringe, orbital rings, an inner energy core and a small
- * deterministic particle field. Every layer is a pure function of
- * (time, phase, audio level), so the entity reads as "an intelligent
- * digital organism made of light" while staying cheap enough for an overlay.
+ * Procedural Canvas rendering (no static PNG): volumetric glow, morphing
+ * shell (orb ↔ energy ring ↔ listening field ↔ thinking core ↔ voice form),
+ * chromatic fringe, counter-rotating orbital rings, a deterministic particle
+ * field and a gradient energy core. All layers are pure functions of the
+ * supplied [AmbientFrame] — the entity is never drawn from hidden state, so
+ * every visual decision stays testable through the pure-JVM form/context
+ * classes.
  *
- * Draw cost per frame: ~2 gradient circles (one pre-allocated gradient),
- * ~4 strokes, 2 ellipse arcs and N<=26 particles — comfortably inside a
- * 60fps budget for a 76dp window, and frame pacing halves that in idle.
- *
- * Allocation policy: paints and the core gradient are created once per size;
- * render() itself allocates nothing except the two tiny transform objects
- * Canvas requires for save/restore-free matrix tweaks (avoided too — we use
- * save/rotate/restore which reuses internal state).
+ * Draw cost per frame: ~2 gradient circles, one squashed local-canvas block
+ * (shell + fringe + rings + core), N ≤ 26 particles. The local-canvas
+ * translate/scale gives the whole entity its 2.5D squash without any
+ * per-layer math and without allocations.
  */
 class AmbientEntityRenderer(
     private val presence: AmbientPresenceController
@@ -51,79 +80,101 @@ class AmbientEntityRenderer(
     private var lastGradientSize = 0f
     private var lastGradientColor = 0
 
-    /** Reusable particle buffer; grown on demand, never reallocated per frame. */
     private var particleBuffer = FloatArray(2 * AmbientParticles.count(false, 1f))
 
     /**
-     * Renders one frame of the entity centred at (cx, cy) with base radius
-     * [radius]. [timeMs] is the animation clock, [audioLevel] the latest
-     * smoothed mic/TTS amplitude in 0..1 (real audio, never faked here).
+     * Renders one frame of the entity centred at (cx, cy) with base [radius].
+     * Phase drives colour + breathing, the morph snapshot drives geometry,
+     * the context profile drives size/intensity, audio drives reactivity.
      */
-    fun render(canvas: Canvas, cx: Float, cy: Float, radius: Float, timeMs: Long, audioLevel: Float) {
-        val phase = presence.currentPhase(timeMs)
-        val intensity = presence.intensity(phase)
-        val audio = audioLevel.coerceIn(0f, 1f) * phase.audioGain
+    fun render(canvas: Canvas, cx: Float, cy: Float, radius: Float, frame: AmbientFrame) {
+        val phase = frame.phase
+        val form = frame.form
+        val context = frame.context
+        val audio = frame.audio.coerceIn(0f, 1f) * phase.audioGain
+        val timeMs = frame.timeMs
 
-        // --- Motion: breathing + micro-orbit + voice expansion ----------------
+        // --- Size: base radius × context × form × breathing × voice ----------
         val breath = breathScale(phase, timeMs)
         val voice = 1f + audio * VOICE_EXPANSION
-        val r = radius * breath * voice
-        val orbitAngle = (timeMs % phase.orbitPeriodMs).toFloat() / phase.orbitPeriodMs * TAU
-        val orbitX = cos(orbitAngle) * phase.orbitAmplitude * radius
-        val orbitY = sin(orbitAngle) * phase.orbitAmplitude * radius * 0.6f
-        val ox = cx + orbitX
-        val oy = cy + orbitY
+        val r = radius * context.scaleMultiplier * form.scale * breath * voice
+        val intensity = (presence.intensity(phase) * context.intensityMultiplier)
+            .coerceIn(0.02f, 1f)
 
         val shellColor = shellColor(phase)
         val coreColor = coreColor(phase)
 
-        // --- Layer 1: volumetric glow (two soft circles, no per-frame shader) -
+        // Micro-orbit: subtle drift so the entity feels alive while parked.
+        val orbitAngle = (timeMs % phase.orbitPeriodMs).toFloat() / phase.orbitPeriodMs * TAU
+        val ox = cx + cos(orbitAngle) * phase.orbitAmplitude * radius
+        val oy = cy + sin(orbitAngle) * phase.orbitAmplitude * radius * 0.6f
+
+        // --- Layer 1: volumetric glow ----------------------------------------
         glow.color = shellColor
         glow.alpha = (26 + 54 * intensity).toInt()
-        canvas.drawCircle(ox, oy, r * 1.28f, glow)
+        drawSquashedCircle(canvas, ox, oy, r * 1.28f, form.squash, glow)
         glow.alpha = (18 + 40 * intensity).toInt()
-        canvas.drawCircle(ox, oy, r * 1.55f, glow)
+        drawSquashedCircle(canvas, ox, oy, r * 1.55f, form.squash, glow)
 
-        // --- Layer 2: glass-like light shell with chromatic fringe ------------
-        shellFill.color = shellColor
-        shellFill.alpha = (16 + 26 * intensity).toInt()
-        canvas.drawCircle(ox, oy, r * 0.88f, shellFill)
+        // --- Local squashed canvas: shell, fringe, rings, core ---------------
+        canvas.save()
+        canvas.translate(ox, oy)
+        canvas.scale(1f, form.squash.coerceAtLeast(0.30f))
 
-        // Audio-reactive distortion: the shell breathes with the voice, drawn
-        // as six arc segments whose radii differ subtly with the level.
+        // Shell: hollow forms (energy ring / listening field) push the stroke
+        // outward and drop the fill; filled forms keep the glass disc.
+        val hollowness = form.ringHollowness.coerceIn(0f, 1f)
+        if (hollowness < 0.4f) {
+            shellFill.color = shellColor
+            shellFill.alpha = ((16 + 26 * intensity) * (1f - hollowness)).toInt()
+            canvas.drawCircle(0f, 0f, r * 0.88f, shellFill)
+        }
+
+        // Audio-reactive, deformation-reactive shell arcs. The wobble makes
+        // VOICE_FORM look waveform-like and LISTENING_FIELD ripple with the mic.
         val segments = if (phase.lowPower) 4 else SHELL_SEGMENTS
         shellStroke.strokeWidth = (r * 0.05f).coerceAtLeast(1f)
+        shellStroke.color = shellColor
+        shellStroke.alpha = (150 + 80 * intensity).toInt()
+        val strokeRadius = r * (0.86f + 0.14f * hollowness + audio * 0.05f)
         var index = 0
         while (index < segments) {
             val segAngle = index.toFloat() / segments * TAU
-            // Deterministic segment ripple driven by voice energy.
-            val ripple = sin(segAngle * 3f + timeMs * 0.004f) * audio * r * 0.10f
-            val segRadius = r * (0.86f + audio * 0.05f) + ripple
+            val ripple = sin(segAngle * 3f + timeMs * 0.004f) *
+                (form.deformation + audio * 0.10f) * r
+            val segRadius = strokeRadius + ripple
             val sweep = TAU / segments + 0.16f
-            shellStroke.color = shellColor
-            shellStroke.alpha = (150 + 80 * intensity).toInt()
             canvas.drawArc(
-                ox - segRadius, oy - segRadius, ox + segRadius, oy + segRadius,
+                -segRadius, -segRadius, segRadius, segRadius,
                 segAngle * RAD_TO_DEG, sweep * RAD_TO_DEG, false, shellStroke
             )
             index++
         }
 
-        // Chromatic separation: two thin offset strokes at low alpha — reads as
-        // holographic fringing without any real refraction cost.
+        // Chromatic separation: two thin offset strokes — holographic fringing.
         val fringeOffset = r * 0.035f
         fringe.strokeWidth = (r * 0.02f).coerceAtLeast(0.5f)
         fringe.alpha = (46 * intensity).toInt()
         fringe.color = FRINGE_COOL
-        canvas.drawCircle(ox - fringeOffset, oy, r * 0.92f, fringe)
+        canvas.drawCircle(-fringeOffset, 0f, r * 0.92f, fringe)
         fringe.color = FRINGE_WARM
-        canvas.drawCircle(ox + fringeOffset, oy, r * 0.92f, fringe)
+        canvas.drawCircle(fringeOffset, 0f, r * 0.92f, fringe)
 
-        // --- Layer 3: orbital rings (2.5D: squashed ellipses, counter-rotating)
-        drawRing(canvas, ox, oy, r * 1.02f, 0.34f, timeMs * RING_SPEED_A, intensity, shellColor)
-        drawRing(canvas, ox, oy, r * 0.74f, -0.22f, timeMs * RING_SPEED_B, intensity, coreColor)
+        // Orbital rings: squashed ellipses, counter-rotating, spin from the form.
+        val spin = timeMs * 0.001f * form.spinSpeed
+        drawRing(canvas, r * 1.02f * (1f + audio * 0.05f), 0.34f, spin, intensity, shellColor)
+        drawRing(canvas, r * 0.74f, -0.22f, -spin * 1.3f, intensity, coreColor)
 
-        // --- Layer 4: particle field ------------------------------------------
+        // Inner energy core: smaller on hollow forms, pulses with the voice.
+        val coreRadius = r * (0.34f - 0.10f * hollowness + audio * 0.10f)
+        ensureGradient(coreRadius, coreColor)
+        corePaint.shader = coreGradient
+        canvas.drawCircle(0f, 0f, coreRadius, corePaint)
+        corePaint.shader = null
+
+        canvas.restore()
+
+        // --- Particles (unsquashed draw space, own 0.82 ellipse) -------------
         val count = AmbientParticles.count(phase.lowPower, presence.animationIntensity)
         if (particleBuffer.size < 2 * count) particleBuffer = FloatArray(2 * count)
         val written = AmbientParticles.positions(count, timeMs, audio, particleBuffer)
@@ -138,29 +189,35 @@ class AmbientEntityRenderer(
             i++
         }
 
-        // --- Layer 5: inner energy core (pre-allocated radial gradient) -------
-        // The gradient is built centred on the origin and the canvas is
-        // translated to the entity centre: no per-frame shader allocation.
-        val coreRadius = r * (0.34f + audio * 0.10f)
-        ensureGradient(coreRadius, coreColor)
-        corePaint.shader = coreGradient
+        // --- Bright centre dot (in squashed space, drawn last) ----------------
         canvas.save()
         canvas.translate(ox, oy)
-        canvas.drawCircle(0f, 0f, coreRadius, corePaint)
-        canvas.restore()
-        corePaint.shader = null
-
-        // Bright centre dot; pulse grows with voice energy.
+        canvas.scale(1f, form.squash.coerceAtLeast(0.30f))
         corePaint.color = Color.WHITE
         corePaint.alpha = (150 + 90 * intensity).toInt()
-        canvas.drawCircle(ox, oy, r * (0.07f + audio * 0.04f), corePaint)
+        canvas.drawCircle(0f, 0f, r * (0.07f + audio * 0.04f), corePaint)
         corePaint.alpha = 255
+        canvas.restore()
     }
 
-    private fun drawRing(
+    private fun drawSquashedCircle(
         canvas: Canvas,
         cx: Float,
         cy: Float,
+        radius: Float,
+        squash: Float,
+        paint: Paint
+    ) {
+        canvas.save()
+        canvas.translate(cx, cy)
+        canvas.scale(1f, squash.coerceAtLeast(0.30f))
+        canvas.drawCircle(0f, 0f, radius, paint)
+        canvas.restore()
+    }
+
+    /** Ring drawn in local (already translated+squashed) coordinates. */
+    private fun drawRing(
+        canvas: Canvas,
         radius: Float,
         tilt: Float,
         angleRad: Float,
@@ -169,12 +226,12 @@ class AmbientEntityRenderer(
     ) {
         ringPaint.color = color
         ringPaint.alpha = (60 + 90 * intensity).toInt()
-        ringPaint.strokeWidth = radius * 0.055f
+        ringPaint.strokeWidth = (radius * 0.055f).coerceAtLeast(0.5f)
         canvas.save()
-        canvas.rotate(tilt * 57.29f, cx, cy)
+        canvas.rotate(tilt * 57.29f)
         val squash = 0.42f
         canvas.drawArc(
-            cx - radius, cy - radius * squash, cx + radius, cy + radius * squash,
+            -radius, -radius * squash, radius, radius * squash,
             angleRad * RAD_TO_DEG % 360f, 300f, false, ringPaint
         )
         canvas.restore()
@@ -190,7 +247,10 @@ class AmbientEntityRenderer(
         // Reuse only when the cached gradient is at least as large AND was
         // built for the same phase colour; otherwise rebuild (cheap, rare).
         if (existing != null && lastGradientSize >= radius && lastGradientColor == color) return
-        coreGradient = RadialGradient(0f, 0f, radius.coerceAtLeast(1f), intArrayOf(color, Color.TRANSPARENT), null, Shader.TileMode.CLAMP)
+        coreGradient = RadialGradient(
+            0f, 0f, radius.coerceAtLeast(1f),
+            intArrayOf(color, Color.TRANSPARENT), null, Shader.TileMode.CLAMP
+        )
         lastGradientSize = radius
         lastGradientColor = color
     }
@@ -224,8 +284,6 @@ class AmbientEntityRenderer(
         const val RAD_TO_DEG = 57.2957795f
         const val SHELL_SEGMENTS = 6
         const val VOICE_EXPANSION = 0.22f
-        const val RING_SPEED_A = 0.0011f
-        const val RING_SPEED_B = -0.0007f
         const val FRINGE_COOL = 0xFF4FC3F7.toInt()
         const val FRINGE_WARM = 0xFFFF8A80.toInt()
     }

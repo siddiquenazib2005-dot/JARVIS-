@@ -55,9 +55,19 @@ class AmbientPresenceController(
         }
     }
 
-    /** Gesture/setting: park the entity until the next meaningful event. */
+    /**
+     * Gesture/setting: park the entity until the next meaningful event.
+     * Minimizing also CANCELS any running transient pulse — SLEEPING takes
+     * over immediately (one visual state at a time, no animation stacking).
+     */
     fun setMinimized(minimized: Boolean) {
-        minimizeRequested = minimized
+        synchronized(lock) {
+            minimizeRequested = minimized
+            if (minimized) {
+                transientPhase = null
+                transientUntilMs = 0L
+            }
+        }
     }
 
     val minimized: Boolean get() = minimizeRequested
