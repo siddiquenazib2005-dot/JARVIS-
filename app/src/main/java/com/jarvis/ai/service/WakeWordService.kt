@@ -234,6 +234,15 @@ class WakeWordService : Service() {
     companion object {
         const val ACTION_STOP = "com.jarvis.ai.WAKE_WORD_STOP"
 
+        /**
+         * Legacy extra still read by MainActivity (and referenced by the repo's
+         * static-analysis contract). The provider flow no longer attaches a
+         * spoken command — the wake handoff now opens the existing voice-mode
+         * session via [MainActivity.EXTRA_OPEN_VOICE_MODE] instead — but the
+         * key stays declared so old intents remain harmless.
+         */
+        const val EXTRA_WAKE_COMMAND = "wake_command"
+
         private const val CHANNEL_ID = "aurix_wake_word"
         private const val NOTIFICATION_ID = 4711
         private const val BASE_BACKOFF_MS = 600L
