@@ -103,7 +103,7 @@ class WakeWordService : Service() {
     /** Arms the engine. On failure, backs off and retries while running. */
     private fun startProvider() {
         if (!running) return
-        val started = runCatching { provider?.start() }.getOrDefault(false)
+        val started = runCatching { provider?.start() ?: false }.getOrDefault(false)
         Listening.set(started)
         if (started) {
             backoffMs = BASE_BACKOFF_MS
@@ -115,7 +115,7 @@ class WakeWordService : Service() {
     private fun resumeProvider() {
         if (!running) return
         if (mustStayPaused()) return
-        val ok = runCatching { provider?.resume() }.getOrDefault(false)
+        val ok = runCatching { provider?.resume() ?: false }.getOrDefault(false)
         Listening.set(ok)
         if (!ok) scheduleRetry()
     }

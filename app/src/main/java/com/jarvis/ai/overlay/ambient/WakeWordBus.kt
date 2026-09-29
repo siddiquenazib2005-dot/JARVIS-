@@ -61,8 +61,8 @@ object WakeWordBus {
      */
     fun phasePublish(published: Boolean): Boolean {
         if (!published) return false
-        val accepted = AmbientPhaseBus.publish(AmbientPhase.AWAKENING, lastAcceptedAtMs)
-        return accepted
+        AmbientPhaseBus.publish(AmbientPhase.AWAKENING, lastAcceptedAtMs)
+        return true
     }
 
     /** Test/diagnostic reset. */

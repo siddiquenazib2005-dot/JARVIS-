@@ -117,7 +117,7 @@ class FloatingAvatarService : Service() {
         }
         runCatching { showCompanion() }
             .onFailure { CrashGuard.record(applicationContext, it) }
-        avatarStateListener = { next ->
+        val stateListener: (AvatarState) -> Unit = { next ->
             main.post {
                 avatarState = next
                 presence.onAssistantState(next)
@@ -125,7 +125,8 @@ class FloatingAvatarService : Service() {
                 notifyState()
             }
         }
-        AvatarStateBus.observe(avatarStateListener)
+        avatarStateListener = stateListener
+        AvatarStateBus.observe(stateListener)
         // Real amplitude (mic RMS + TTS envelope) computed inside the app and
         // bridged here; the overlay never captures audio itself.
         audioReactive.reset()
