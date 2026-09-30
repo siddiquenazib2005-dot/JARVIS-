@@ -65,15 +65,26 @@ data class WakeWordConfig(
 ) {
     companion object {
         /**
-         * The one and only place "HEY JARVIS" is configured. Default threshold
-         * and debounce follow the engine defaults (0.5 / 2000 ms) so behaviour
-         * is predictable before any on-device tuning.
+         * Asset path of the custom "AURIX" wake-word model. The asset is
+         * produced by the repo's own training pipeline
+         * (.github/workflows/train-wakeword.yml, openWakeWord synthetic-data
+         * recipe) and committed at app/src/main/assets/openwakeword/aurix.onnx.
+         * Until that asset exists, [com.jarvis.ai.service.wakeword
+         * .OpenWakeWordProvider] falls back to the built-in temporary model —
+         * the app never breaks while the custom model is unavailable.
+         */
+        const val AURIX_MODEL_ASSET = "openwakeword/aurix.onnx"
+
+        /**
+         * The one and only place the wake phrase is configured. Default
+         * threshold and debounce follow the engine defaults (0.5 / 2000 ms)
+         * so behaviour is predictable before any on-device tuning.
          */
         val DEFAULT = WakeWordConfig(
             phrase = "HEY JARVIS",
             threshold = 0.5f,
             debounceMs = 2_000L,
-            customModelAssetPath = null
+            customModelAssetPath = AURIX_MODEL_ASSET
         )
     }
 }

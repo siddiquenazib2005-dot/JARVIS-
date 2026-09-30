@@ -47,7 +47,9 @@ class WakeWordEngineTest {
     fun test1_providerConfigDefaults() {
         val config = WakeWordConfig.DEFAULT
         assertEquals("HEY JARVIS", config.phrase)
-        assertNull("built-in model must be active until a custom AURIX asset ships", config.customModelAssetPath)
+        // The custom "AURIX" asset is the configured target; the provider
+        // falls back to the built-in model until that asset ships.
+        assertEquals(WakeWordConfig.AURIX_MODEL_ASSET, config.customModelAssetPath)
         assertTrue(config.threshold in 0.01f..0.99f)
         assertTrue(config.debounceMs > 0)
     }
@@ -192,6 +194,30 @@ class WakeWordEngineTest {
         assertFalse(provider.start())
         assertFalse(provider.isRunning())
         assertEquals(0, hits.get())
+    }
+
+    // ---------------------------------------------------------------
+    // 9b. Custom model missing -> built-in fallback (no crash)
+    // ---------------------------------------------------------------
+    @Test
+    fun test9b_customModelAssetMissingFallsBackToBuiltIn() {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app).grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+        // A config pointing at an asset that does not exist exercises the
+        // fallback path deliberately (this must keep working even after the
+        // real aurix.onnx asset ships). The provider must silently fall back
+        // to the built-in model and stay fully functional.
+        val broken = WakeWordConfig(
+            phrase = "HEY JARVIS",
+            threshold = 0.5f,
+            debounceMs = 2_000L,
+            customModelAssetPath = "openwakeword/this_asset_does_not_exist.onnx"
+        )
+        val provider = OpenWakeWordProvider(app, broken)
+        assertTrue("fallback engine must arm normally", provider.start())
+        assertTrue(provider.isRunning())
+        provider.release()
+        assertFalse(provider.start())
     }
 
     // ---------------------------------------------------------------

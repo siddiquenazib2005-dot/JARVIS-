@@ -127,7 +127,13 @@ class OpenWakeWordProvider(
         ops.shutdown()
     }
 
-    /** Builds a fresh engine. Null = model/ONNX unavailable (reported honestly). */
+    /**
+     * Builds a fresh engine. Tries the configured custom asset first (the
+     * future "AURIX" model); when it is missing — the default until the
+     * training pipeline ships it — falls back to the built-in temporary
+     * model so wake-word support degrades instead of breaking. Null = no
+     * model available at all (reported honestly to the caller).
+     */
     private fun buildEngine(): OpenWakeWord? = runCatching {
         val builder = OpenWakeWord.Builder(appContext)
             .setThreshold(config.threshold)
@@ -136,7 +142,17 @@ class OpenWakeWordProvider(
         if (asset.isNullOrBlank()) {
             builder.setModel(OpenWakeWord.BuiltInModel.HEY_JARVIS)
         } else {
-            builder.setModelAsset(asset)
+            try {
+                appContext.assets.open(asset).use { stream ->
+                    // Touch the first bytes: proves the asset exists and is
+                    // readable before the engine is built around it.
+                    stream.read()
+                    builder.setModelAsset(asset)
+                }
+            } catch (notFound: Exception) {
+                // Custom model not shipped yet -> temporary built-in phrase.
+                builder.setModel(OpenWakeWord.BuiltInModel.HEY_JARVIS)
+            }
         }
         builder.build()
     }.getOrNull()
