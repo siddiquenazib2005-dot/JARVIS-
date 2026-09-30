@@ -78,9 +78,13 @@ class ReminderCommandsTest {
         val p = ReminderCommands.parse("remind me to call HR tomorrow at 9 am")!!
         val fire = p.fireAt(now)
         assertEquals(9, hourOf(fire))
-        // Next occurrence of 09:00 strictly after now: between 1 minute and ~25h out.
+        // "tomorrow" is literal in the parser (dayOffset = 1): it fires at 09:00
+        // on the NEXT calendar day even when today's 09:00 is still ahead, so the
+        // worst case (a run just after midnight) is ~33h out. A ~25h bound assumed
+        // a next-occurrence semantics and made this test fail on UTC CI runners
+        // whenever the build ran between 00:00 and 09:00.
         assertTrue("fire should be in the future", fire > now)
-        assertTrue("fire should be within ~25h", fire - now < 25 * 3_600_000L + 60_000L)
+        assertTrue("fire should be within ~33h", fire - now < 33 * 3_600_000L + 60_000L)
         assertTrue(p.summary.startsWith("tomorrow"))
     }
 
