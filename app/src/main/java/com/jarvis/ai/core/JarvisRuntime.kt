@@ -50,9 +50,13 @@ class JarvisRuntime private constructor(context: Context) {
     val secrets: SecretsSource = object : SecretsSource {
         override fun get(reference: String): String? {
             val baseRef = reference.substringBeforeLast("#")
-            secureStore.get(baseRef)?.let { return it }
+            secureStore.get(baseRef)?.takeIf { it.isNotBlank() }?.let { return it }
             migrateFromFileIfNeeded()
-            return fileProperties.getProperty(baseRef)
+            fileProperties.getProperty(baseRef)?.takeIf { it.isNotBlank() }?.let { return it }
+            return runCatching {
+                val field = com.jarvis.ai.BuildConfig::class.java.getField(baseRef)
+                field.get(null)?.toString()?.takeIf { it.isNotBlank() && !it.startsWith("your_") }
+            }.getOrNull()
         }
     }
 
