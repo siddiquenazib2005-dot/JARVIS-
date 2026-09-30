@@ -1,0 +1,76 @@
+name: Train AURIX wake-word model
+
+# Trains the custom "hey aurix" openWakeWord model entirely on GitHub-hosted
+# CPU runners (no user machine involved). Manual dispatch only: it runs for
+# hours and downloads ~13 GB of training data, so it must never fire on push.
+on:
+  workflow_dispatch:
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Free disk space and install system deps
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android || true
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg espeak-ng
+          sudo apt-get clean
+
+      - name: Clone upstream training repos (pinned layout expected by scripts/train_aurix_wakeword.py)
+        run: |
+          git clone --depth 1 https://github.com/dscripka/openWakeWord training_work/openwakeword
+          git clone --depth 1 https://github.com/dscripka/piper-sample-generator training_work/piper-sample-generator
+
+      - name: Download Piper TTS voice model
+        # train.py calls generate_samples() without a model argument, which
+        # resolves to <piper>/models/en-us-libritts-high.pt (default inside the
+        # fork). The matching .json config is already committed in the fork
+        # next to that exact filename, so we download the v1.0.0 single-speaker
+        # voice under that name (the notebook-era model for this recipe).
+        run: |
+          mkdir -p training_work/piper-sample-generator/models
+          curl -L --retry 3 --retry-delay 5 \
+            -o training_work/piper-sample-generator/models/en-us-libritts-high.pt \
+            https://github.com/rhasspy/piper-sample-generator/releases/download/v1.0.0/en-us-libritts-high.pt
+
+      - name: Pre-fetch openWakeWord feature models (best effort; runtime auto-download is the fallback)
+        run: |
+          mkdir -p training_work/openwakeword/openwakeword/resources/models
+          base=https://github.com/dscripka/openWakeWord/releases/download/v0.5.1
+          for f in embedding_model.onnx embedding_model.tflite melspectrogram.onnx melspectrogram.tflite; do
+            curl -fsSL --retry 3 --retry-delay 5 \
+              -o "training_work/openwakeword/openwakeword/resources/models/$f" "$base/$f" \
+              || echo "::warning::could not pre-fetch $f (openWakeWord will auto-download at runtime)"
+          done
+
+      - name: Install Python dependencies (CPU-only torch)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install "numpy<2" onnxruntime ai-edge-litert speexdsp-ns tqdm scipy \
+            scikit-learn requests soundfile torchinfo torchmetrics \
+            "speechbrain==0.5.14" "audiomentations==0.33.0" "torch-audiomentations==0.11.0" \
+            "acoustics==0.2.6" "mutagen==1.47.0" "pronouncing==0.2.0" \
+            datasets deep-phonemizer webrtcvad-wheels espeak-phonemizer pyyaml
+          pip install -e ./training_work/openwakeword
+
+      - name: Syntax-check training script
+        run: python -m py_compile scripts/train_aurix_wakeword.py
+
+      - name: Train AURIX model (CPU; expect multiple hours)
+        run: python scripts/train_aurix_wakeword.py
+
+      - name: Upload trained model
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurix-wakeword-onnx
+          path: training_out/aurix/aurix.onnx
+          if-no-files-found: error
