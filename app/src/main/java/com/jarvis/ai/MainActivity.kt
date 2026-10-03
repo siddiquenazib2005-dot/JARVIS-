@@ -33,6 +33,7 @@ import com.jarvis.ai.diagnostics.StartupTracker
 import com.jarvis.ai.onboarding.OnboardingPrefs
 import com.jarvis.ai.service.WakeWordService
 import com.jarvis.ai.ui.screens.MissionAwareHomeScreen
+import com.jarvis.ai.ui.screens.MissionsScreen
 import com.jarvis.ai.ui.screens.OnboardingScreen
 import com.jarvis.ai.ui.screens.VoiceAwareChatScreen
 import com.jarvis.ai.ui.theme.JarvisTheme
@@ -143,8 +144,13 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                BackHandler(enabled = ready && !showOnboarding && destination == "chat") {
-                    if (jarvisViewModel.handsFreeActive.value) {
+                BackHandler(
+                    enabled = ready && !showOnboarding &&
+                        (destination == "chat" || destination == "missions")
+                ) {
+                    if (destination == "missions") {
+                        destination = "home"
+                    } else if (jarvisViewModel.handsFreeActive.value) {
                         jarvisViewModel.toggleHandsFreeMode()
                     } else {
                         destination = "home"
@@ -166,13 +172,13 @@ class MainActivity : ComponentActivity() {
                     }
                     showOnboarding -> OnboardingScreen(onFinished = { showOnboarding = false })
                     destination == "chat" -> VoiceAwareChatScreen(viewModel = jarvisViewModel)
+                    destination == "missions" -> MissionsScreen(onClose = { destination = "home" })
                     else -> MissionAwareHomeScreen(
                         viewModel = jarvisViewModel,
                         onOpenChat = { destination = "chat" },
-                        onCommand = { command ->
-                            jarvisViewModel.send(command)
-                            destination = "chat"
-                        }
+                        onOpenMissions = { destination = "missions" },
+                        // Settings currently live inside the chat screen.
+                        onOpenSettings = { destination = "chat" }
                     )
                 }
             }

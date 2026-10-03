@@ -52,7 +52,8 @@ private val RuntimeMuted = Color(0xFFB5AAAD)
 fun MissionAwareHomeScreen(
     viewModel: JarvisViewModel,
     onOpenChat: () -> Unit,
-    onCommand: (String) -> Unit
+    onOpenMissions: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val missionEngine = remember(context.applicationContext) {
@@ -62,10 +63,11 @@ fun MissionAwareHomeScreen(
     var feedback by rememberSaveable { mutableStateOf("") }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        AurixHomeScreen(
+        AurixVoiceHomeScreen(
             viewModel = viewModel,
             onOpenChat = onOpenChat,
-            onCommand = onCommand
+            onOpenMissions = onOpenMissions,
+            onOpenSettings = onOpenSettings
         )
 
         if (progress.isActive) {
