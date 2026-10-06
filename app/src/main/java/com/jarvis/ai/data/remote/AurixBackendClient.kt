@@ -1,6 +1,7 @@
 package com.jarvis.ai.data.remote
 
 import android.content.Context
+import com.jarvis.ai.data.local.SecureStore
 import com.jarvis.ai.data.model.Message
 import com.jarvis.ai.data.model.Sender
 import kotlinx.coroutines.Dispatchers
@@ -27,10 +28,14 @@ object BackendPrefs {
 
     private const val PREFS_NAME = "aurix_backend"
     private const val KEY_URL = "base_url"
-    private const val KEY_TOKEN = "app_token"
+    private const val KEY_TOKEN = "aurix_backend_app_token"
+    private const val LEGACY_KEY_TOKEN = "app_token"
 
     @Volatile
     private var appContext: Context? = null
+
+    @Volatile
+    private var secureStore: SecureStore? = null
 
     @Volatile
     var baseUrl: String = ""
@@ -46,19 +51,55 @@ object BackendPrefs {
     fun init(context: Context) {
         val ctx = context.applicationContext
         appContext = ctx
+        val secure = SecureStore(ctx)
+        secureStore = secure
         val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         baseUrl = prefs.getString(KEY_URL, "").orEmpty()
-        appToken = prefs.getString(KEY_TOKEN, "").orEmpty()
+        appToken = secure.get(KEY_TOKEN).orEmpty()
+
+        // Migrate the legacy plaintext token only after encryption and a readback
+        // both succeed. If Keystore storage fails, leave the old value untouched
+        // so initialization does not silently discard the user's configuration.
+        if (appToken.isBlank()) {
+            val legacy = prefs.getString(LEGACY_KEY_TOKEN, null).orEmpty()
+            if (legacy.isNotBlank() && secure.putSafely(KEY_TOKEN, legacy)) {
+                val verified = secure.get(KEY_TOKEN)
+                if (verified == legacy) {
+                    appToken = verified
+                    prefs.edit().remove(LEGACY_KEY_TOKEN).commit()
+                } else {
+                    secure.remove(KEY_TOKEN)
+                }
+            }
+        } else {
+            // Clear a stale plaintext copy left by an earlier/interrupted upgrade.
+            prefs.edit().remove(LEGACY_KEY_TOKEN).apply()
+        }
     }
 
-    fun save(url: String, token: String) {
-        baseUrl = normalise(url)
-        appToken = token.trim()
-        appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    /** Saves URL normally and bearer credentials only through Android Keystore. */
+    fun save(url: String, token: String): Boolean {
+        val normalizedUrl = normalise(url)
+        val trimmedToken = token.trim()
+        val secure = secureStore ?: appContext?.let(::SecureStore)?.also { secureStore = it }
+        if (secure == null) return false
+
+        if (normalizedUrl.isBlank() || trimmedToken.isBlank()) {
+            if (!secure.removeSafely(KEY_TOKEN)) return false
+            appToken = ""
+        } else {
+            if (!secure.putSafely(KEY_TOKEN, trimmedToken) || secure.get(KEY_TOKEN) != trimmedToken) {
+                return false
+            }
+            appToken = trimmedToken
+        }
+        val saved = appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             ?.edit()
-            ?.putString(KEY_URL, baseUrl)
-            ?.putString(KEY_TOKEN, appToken)
-            ?.apply()
+            ?.putString(KEY_URL, normalizedUrl)
+            ?.remove(LEGACY_KEY_TOKEN)
+            ?.commit() ?: false
+        if (saved) baseUrl = normalizedUrl
+        return saved
     }
 
     fun clear() = save("", "")

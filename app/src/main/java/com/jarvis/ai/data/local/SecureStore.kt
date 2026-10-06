@@ -35,26 +35,32 @@ class SecureStore(context: Context) {
     }
 
     fun put(key: String, value: String) {
-        runCatching {
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.ENCRYPT_MODE, masterKey())
-            val encoded = Base64.encodeToString(cipher.iv, Base64.NO_WRAP) +
-                SEPARATOR +
-                Base64.encodeToString(
-                    cipher.doFinal(value.toByteArray(Charsets.UTF_8)),
-                    Base64.NO_WRAP
-                )
-            // commit() not apply(): durable memory is a real guarantee, and a
-            // pending apply() write is lost if the process dies before the
-            // disk flush. commit() also reports failure, so callers can't be
-            // told a memory was saved when it wasn't.
-            prefs.edit().putString(key, encoded).commit()
-        }
+        putSafely(key, value)
     }
 
+    /** Stores a secret and reports whether the durable encrypted write succeeded. */
+    fun putSafely(key: String, value: String): Boolean = runCatching {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, masterKey())
+        val encoded = Base64.encodeToString(cipher.iv, Base64.NO_WRAP) +
+            SEPARATOR +
+            Base64.encodeToString(
+                cipher.doFinal(value.toByteArray(Charsets.UTF_8)),
+                Base64.NO_WRAP
+            )
+        // commit() not apply(): durable memory is a real guarantee, and a
+        // pending apply() write is lost if the process dies before the
+        // disk flush. commit() also reports failure, so callers can't be
+        // told a memory was saved when it wasn't.
+        prefs.edit().putString(key, encoded).commit()
+    }.getOrDefault(false)
+
     fun remove(key: String) {
-        prefs.edit().remove(key).commit()
+        removeSafely(key)
     }
+
+    fun removeSafely(key: String): Boolean =
+        runCatching { prefs.edit().remove(key).commit() }.getOrDefault(false)
 
     fun contains(key: String): Boolean = prefs.contains(key)
 

@@ -304,7 +304,10 @@ class JarvisViewModel(
 
     /** Saves the backend pointer and reports the live connection state. */
     fun saveBackend(url: String, token: String, onResult: (String) -> Unit) {
-        BackendPrefs.save(url, token)
+        if (!BackendPrefs.save(url, token)) {
+            onResult("Could not securely save backend settings. Please try again.")
+            return
+        }
         if (!BackendPrefs.isEnabled) {
             onResult("Backend cleared — using on-device routing, sir.")
             return

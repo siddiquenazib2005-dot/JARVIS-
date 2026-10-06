@@ -25,6 +25,7 @@
 import express from 'express'
 import cors from 'cors'
 import crypto from 'crypto'
+import { toolsEnabledFromEnv } from './config.js'
 import {
 	CAPABILITIES,
 	PROVIDERS,
@@ -64,9 +65,7 @@ const ALLOW_ANON = ['1', 'true', 'yes'].includes(
 )
 const authRequired = Boolean(APP_TOKEN) || !ALLOW_ANON
 // AURIX_TOOLS=off disables server-side tool execution entirely.
-const TOOLS_ENABLED = !['1', 'true', 'yes'].includes(
-	String(process.env.AURIX_TOOLS || '').toLowerCase()
-)
+const TOOLS_ENABLED = toolsEnabledFromEnv(process.env.AURIX_TOOLS)
 
 const DEFAULT_SYSTEM =
 	'You are AURIX, a concise and capable Android assistant. ' +
