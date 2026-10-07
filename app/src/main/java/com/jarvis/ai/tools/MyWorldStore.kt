@@ -132,6 +132,8 @@ class MyWorldStore(context: Context) {
 
     private fun hasLocationPermission(): Boolean =
         ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
     /**
@@ -140,9 +142,10 @@ class MyWorldStore(context: Context) {
      * place the owner is already standing in.
      */
     private fun lastKnown(): Location? {
+        if (!hasLocationPermission()) return null
         val manager = app.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             ?: return null
-        return runCatching {
+        return try {
             listOf(
                 LocationManager.GPS_PROVIDER,
                 LocationManager.NETWORK_PROVIDER,
@@ -152,7 +155,10 @@ class MyWorldStore(context: Context) {
                     runCatching { manager.getLastKnownLocation(provider) }.getOrNull()
                 }
                 .maxByOrNull { it.time }
-        }.getOrNull()
+        } catch (_: SecurityException) {
+            // Location access can be revoked between the permission check and the provider call.
+            null
+        }
     }
 
     private fun normalise(value: String): String =
