@@ -32,12 +32,6 @@ android {
     }
 
     signingConfigs {
-        create("debugConfig") {
-            storeFile = file("${rootDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
         create("release") {
             val storePath = keystoreProps.getProperty("jarvis.storeFile")
             if (storePath != null) {
@@ -50,9 +44,8 @@ android {
     }
 
     buildTypes {
-        debug {
-            signingConfig = signingConfigs.getByName("debugConfig")
-        }
+        // The Android Gradle plugin supplies its standard local debug keystore.
+        // Do not depend on a repository-root debug.keystore that is not shipped.
         release {
             isMinifyEnabled = false
             proguardFiles(

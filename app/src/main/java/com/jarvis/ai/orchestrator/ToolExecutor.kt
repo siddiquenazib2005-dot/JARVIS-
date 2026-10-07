@@ -676,6 +676,28 @@ data class PlanStep(
     val dependsOn: Int? = null // Index of step this depends on, null if none
 )
 
+data class PlanApprovalRequest(
+    val stepIndex: Int,
+    val toolName: String,
+    val message: String
+)
+
+/** Finds approval-gated actions before a mission can execute any step. */
+object PlanApprovalPolicy {
+    fun requiredConfirmation(
+        steps: List<PlanStep>,
+        userConfirmedThisTurn: Boolean
+    ): PlanApprovalRequest? {
+        if (userConfirmedThisTurn) return null
+        return steps.mapIndexedNotNull { index, step ->
+            val decision = com.jarvis.ai.security.PermissionGate.decide(step.toolName)
+            if (decision.requiresConfirmation) {
+                PlanApprovalRequest(index, step.toolName, decision.message)
+            } else null
+        }.firstOrNull()
+    }
+}
+
 /** Task planner for multi-step operations. */
 class TaskPlanner {
 

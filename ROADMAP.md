@@ -28,6 +28,22 @@ Roadmap is based on source inspection of commit `6d8617e`. Priority: P0 broken/s
 - **Benefit:** Lower privacy and policy exposure; clearer user trust.
 - **Order:** Before adding more device capabilities.
 
+### P0: Make clean debug APK builds reproducible — DONE (build verification pending)
+- **Purpose:** Remove dependence on a missing repository-root debug keystore and restore direct wrapper execution.
+- **Dependencies:** Android Gradle Plugin default debug signing.
+- **Components:** `app/build.gradle.kts`, `gradlew` executable mode.
+- **Complexity/Risk:** S / High (release blocker).
+- **Benefit:** Clean checkouts and CI can use the standard Gradle wrapper task to produce a debug APK.
+- **Order:** First stability fix; local build still needs JDK 17 + Android SDK to verify.
+
+### P1: Gate sensitive multi-step plans before execution — DONE (JVM verification pending)
+- **Purpose:** Request approval for any gated step before the plan runs and carry confirmed state into tool execution.
+- **Dependencies:** Existing `PermissionGate`, `AgentLoop`, confirmation UI.
+- **Components:** `MasterOrchestrator`, `ToolExecutor` plan policy, focused tests.
+- **Complexity/Risk:** S / High (action safety).
+- **Benefit:** No earlier mission step runs while a later sensitive step is awaiting approval; the user gets a real confirmation request.
+- **Order:** Before adding more write-capable tools; validate with Gradle tests when a JDK is available.
+
 ## Phase 2 — Voice State and Lifecycle Stability
 
 ### P1: Define canonical assistant phase and transition owner

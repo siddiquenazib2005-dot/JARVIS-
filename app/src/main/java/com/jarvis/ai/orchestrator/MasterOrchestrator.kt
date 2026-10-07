@@ -368,6 +368,14 @@ class MasterOrchestrator(
             return updates
         }
 
+        if (plan.steps.size > 1) {
+            val approval = PlanApprovalPolicy.requiredConfirmation(plan.steps, userConfirmed)
+            if (approval != null) {
+                updates += OrchestratorUpdate.Confirmation(approval.toolName, approval.message)
+                return updates
+            }
+        }
+
         if (plan.steps.size == 1) {
             val step = plan.steps.first()
             val result = toolExecutor.executeTool(step.toolName, step.parameters, userConfirmed)
@@ -392,7 +400,11 @@ class MasterOrchestrator(
             goal = rawInput,
             steps = plan.steps,
             executor = { step, _ ->
-                when (val r = toolExecutor.executeTool(step.toolName, step.parameters)) {
+                when (val r = toolExecutor.executeTool(
+                    step.toolName,
+                    step.parameters,
+                    userConfirmedThisTurn = userConfirmed
+                )) {
                     is ToolResult.Success -> StepOutcome.Success(r.message)
                     is ToolResult.ConfirmationRequired ->
                         StepOutcome.Failure(r.message, recoverable = false)
