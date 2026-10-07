@@ -83,6 +83,13 @@ Two verified issues are selected for immediate repair: the backend tool-disable 
 - **Recommended fix:** Enable R8 only after adding keep rules and verifying provider serialization/reflection, services and Compose release behavior.
 - **Risk:** Medium/high. **Status:** open; separate release validation needed.
 
+### P1. Local communication shortcuts bypassed the central approval pipeline
+- **Files:** `viewmodel/JarvisViewModel.kt`, `tools/QuickCommandRouter.kt`, `tools/DeviceActionPack.kt`.
+- **Problem:** Quick-command interception ran before the orchestrator for calls and SMS/WhatsApp; its accessibility path can send, and configured SMTP could send directly. A confirmation notice also said to tap Send even though the UI only supported repeating the original request.
+- **Why it matters:** A message or call could execute without the tool permission gate, and an approval prompt did not reliably confirm the pending action.
+- **Recommended fix:** Route individual communications through the existing gate, gate SMTP and group chat before their local side effects, and treat only an exact repeat of the pending command as confirmation.
+- **Risk:** High (privacy and external side effects). **Status:** fixed in this pass; Android tests remain blocked by missing JDK.
+
 ## 6. Medium Priority Problems (P2)
 
 ### P2. Screen navigation is manually state-switched

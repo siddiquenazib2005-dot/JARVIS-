@@ -56,6 +56,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 
+/** Exact repeat of the pending command is the UI's explicit confirmation gesture. */
+internal fun matchesPendingConfirmation(pending: String?, submitted: String): Boolean =
+    !pending.isNullOrBlank() && pending.trim().equals(submitted.trim(), ignoreCase = true)
+
+/** Device communication intents must stay on the local, approval-gated tool path. */
+internal fun isApprovalGatedCommunication(text: String): Boolean =
+    com.jarvis.ai.orchestrator.IntentClassifier.classifyIntent(text).intent in setOf(
+        "SEND_SMS", "SEND_WHATSAPP", "MAKE_CALL"
+    )
+
 /**
  * UI-side state holder. ALL intelligence flows through [MasterOrchestrator];
  * this class never touches provider credentials or endpoints directly.
@@ -595,6 +605,10 @@ class JarvisViewModel(
     }
 
     fun send(rawInput: String) {
+        if (matchesPendingConfirmation(pendingConfirmation, rawInput)) {
+            confirmPendingAction()
+            return
+        }
         pendingConfirmation = null
         _uiState.update { it.copy(hasPendingConfirmation = false) }
         dispatchToOrchestrator(rawInput, confirmed = false)
@@ -692,17 +706,49 @@ class JarvisViewModel(
         val sessionId = _uiState.value.activeSessionId
         if (sessionId.isBlank()) return
 
+        // Group chats cannot be resolved by phone number, so keep their local
+        // accessibility path but gate it before any screen interaction.
+        quickCommands.whatsappGroupRequest(trimmed)?.let { request ->
+            val decision = com.jarvis.ai.security.PermissionGate.decide("send_whatsapp", confirmed)
+            com.jarvis.ai.security.AuditLog.record("send_whatsapp", decision, request.chatName)
+            if (decision.requiresConfirmation) {
+                pendingConfirmation = trimmed
+                _uiState.update { it.copy(hasPendingConfirmation = true) }
+                setNotice("${decision.message} Chat: ${request.chatName}. Send the same request again to confirm.")
+            } else if (!decision.denied) {
+                handleForcedLocalAsync(sessionId, trimmed)
+            }
+            return
+        }
+
+        // SMTP can send outside Android's compose UI, so it must use the same
+        // explicit current-turn approval policy as other communication tools.
+        quickCommands.emailRequest(trimmed)?.let { request ->
+            val decision = com.jarvis.ai.security.PermissionGate.decide("send_email", confirmed)
+            com.jarvis.ai.security.AuditLog.record("send_email", decision, request.to)
+            if (decision.requiresConfirmation) {
+                pendingConfirmation = trimmed
+                _uiState.update { it.copy(hasPendingConfirmation = true) }
+                setNotice("${decision.message} Recipient: ${request.to}. Send the same request again to confirm.")
+            } else if (!decision.denied) {
+                sendEmail(sessionId, trimmed, request)
+            }
+            return
+        }
+
+        val approvalGatedCommunication = isApprovalGatedCommunication(trimmed)
+
         // Offline fast path: device commands must work with zero API keys.
         // WhatsApp/SMS/call commands are forced local and run on IO. This prevents
         // two bugs seen on device: provider safety refusals ("I can't use WhatsApp")
         // and ANR from contact lookup / accessibility work on the UI thread.
-        if (!confirmed && isForcedLocalCommand(trimmed)) {
+        if (!confirmed && isForcedLocalCommand(trimmed) && !approvalGatedCommunication) {
             handleForcedLocalAsync(sessionId, trimmed)
             return
         }
 
-        // The remaining quick commands are cheap local checks. Heavy seams
-        // (image/email/photo) are handled separately below.
+        // The remaining quick commands are cheap local checks. Heavy image/photo seams
+        // are handled separately below.
         if (!confirmed) {
             // Item 9: image requests are network work, so they get their own
             // async path instead of blocking the main thread inside the router.
@@ -710,18 +756,13 @@ class JarvisViewModel(
                 generateImage(sessionId, trimmed, prompt)
                 return
             }
-            // MYRA parity: SMTP send and photo understanding are both blocking
-            // network work, so they take the same async seam as image gen
-            // rather than stalling the main thread inside the regex router.
-            quickCommands.emailRequest(trimmed)?.let { request ->
-                sendEmail(sessionId, trimmed, request)
-                return
-            }
+            // Photo understanding is blocking network work, so it uses the same async
+            // seam as image generation instead of stalling the main thread.
             quickCommands.lastPhotoQuestion(trimmed)?.let { question ->
                 describeLastPhoto(sessionId, trimmed, question)
                 return
             }
-            val local = quickCommands.handle(trimmed)
+            val local = if (approvalGatedCommunication) null else quickCommands.handle(trimmed)
             if (!local.isNullOrBlank()) {
                 // Brain step 4 (hybrid routing): a CLEAN local reply means the
                 // command was genuinely satisfied offline -- stop here, no LLM
@@ -739,7 +780,7 @@ class JarvisViewModel(
         }
 
         // Backend path: the user's own server owns keys, routing and memory.
-        if (BackendPrefs.isEnabled) {
+        if (BackendPrefs.isEnabled && !approvalGatedCommunication) {
             streamFromBackend(sessionId, trimmed)
             return
         }
@@ -829,7 +870,7 @@ class JarvisViewModel(
                         is OrchestratorUpdate.Confirmation -> {
                             pendingConfirmation = trimmed
                             _uiState.update { it.copy(hasPendingConfirmation = true) }
-                            setNotice("${update.message} (Tap SEND to confirm.)")
+                            setNotice("${update.message} (Send the same command again to confirm.)")
                         }
 
                         is OrchestratorUpdate.Completed -> {

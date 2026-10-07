@@ -789,7 +789,8 @@ class TaskPlanner {
             }
             "TIME_DATE" -> "get_device_status" // or a dedicated time tool
             "CALCULATION" -> "calculate"
-            "MEMORY" -> "memory" // placeholder
+            // Memory has its own orchestrator path and is not a ToolExecutor action.
+            "MEMORY" -> null
             "SEND_SMS" -> "send_sms"
             "SEND_WHATSAPP" -> "send_whatsapp"
             "MAKE_CALL" -> "call_contact"

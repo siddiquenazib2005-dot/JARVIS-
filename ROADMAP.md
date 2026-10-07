@@ -44,6 +44,14 @@ Roadmap is based on source inspection of commit `6d8617e`. Priority: P0 broken/s
 - **Benefit:** No earlier mission step runs while a later sensitive step is awaiting approval; the user gets a real confirmation request.
 - **Order:** Before adding more write-capable tools; validate with Gradle tests when a JDK is available.
 
+### P0: Route communications through explicit approval — DONE (Android verification pending)
+- **Purpose:** Require approval before calls, direct SMS/WhatsApp sends, SMTP email and group-chat automation; make confirmation interaction truthful and usable.
+- **Dependencies:** Existing permission gate, pending-confirmation flow, command parser.
+- **Components:** `JarvisViewModel`, `IntentClassifier`, `QuickCommandRouter`, `MasterOrchestrator`, `ToolExecutor`.
+- **Complexity/Risk:** M / High (external side effects).
+- **Benefit:** Prevents quick-command/backend routing from bypassing action policy.
+- **Order:** Before adding any communication capability; confirm normal, repeated, cancelled and ambiguous commands on device.
+
 ## Phase 2 — Voice State and Lifecycle Stability
 
 ### P1: Define canonical assistant phase and transition owner

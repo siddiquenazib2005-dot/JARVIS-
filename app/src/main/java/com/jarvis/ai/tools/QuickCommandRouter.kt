@@ -26,6 +26,8 @@ data class EmailRequest(
     val body: String
 )
 
+data class WhatsAppGroupRequest(val chatName: String, val body: String)
+
 /**
  * Deterministic, offline command layer that runs BEFORE any AI provider.
  *
@@ -132,6 +134,20 @@ class QuickCommandRouter(context: Context) {
         val body = afterAny(text, " saying ", " that ", " body ").orEmpty().trim()
         if (to.isBlank()) return null
         return EmailRequest(to = to, subject = subject, body = body)
+    }
+
+    /** Parses a group message so the caller can require approval before automation. */
+    fun whatsappGroupRequest(rawInput: String): WhatsAppGroupRequest? {
+        val text = normalise(rawInput)
+        val rest = afterAny(text, "whatsapp group ", "group message ", "message group ") ?: return null
+        val chatName = rest.substringBefore(" saying ")
+            .substringBefore(" that ")
+            .substringBefore(" bolo ")
+            .trim()
+        val body = afterAny(rest, " saying ", " that ", " bolo ").orEmpty().trim()
+        return WhatsAppGroupRequest(chatName, body).takeIf {
+            it.chatName.isNotBlank() && it.body.isNotBlank()
+        }
     }
 
     /**
@@ -463,15 +479,8 @@ class QuickCommandRouter(context: Context) {
         // ---------- Messaging ----------
         // Group phrasing first: groups have no number, so they need the
         // search-and-send path instead of a wa.me link.
-        afterAny(text, "whatsapp group ", "group message ", "message group ")?.let { rest ->
-            val name = rest.substringBefore(" saying ")
-                .substringBefore(" that ")
-                .substringBefore(" bolo ")
-                .trim()
-            val body = afterAny(rest, " saying ", " that ", " bolo ").orEmpty().trim()
-            if (name.isNotBlank() && body.isNotBlank()) {
-                return actions.whatsappGroup(name, body)
-            }
+        whatsappGroupRequest(input)?.let { request ->
+            return actions.whatsappGroup(request.chatName, request.body)
         }
         parseMessage(text, listOf("whatsapp"))?.let { (who, body) ->
             return actions.whatsapp(who, body)
